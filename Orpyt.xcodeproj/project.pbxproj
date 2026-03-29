@@ -7,18 +7,32 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A00000000000000000000011 /* Sources/OrpytApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* Sources/OrpytApp.swift */; };
+		A00000000000000000000011 /* OrpytApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* OrpytApp.swift */; };
 		A00000000000000000000012 /* Assets/logo.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* Assets/logo.png */; };
 		A00000000000000000000014 /* Assets/appstore.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* Assets/appstore.png */; };
+		A00000000000000000000015 /* ClockCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* ClockCardViews.swift */; };
+		A00000000000000000000016 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* Models.swift */; };
+		A00000000000000000000017 /* PopoverViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* PopoverViews.swift */; };
+		A00000000000000000000018 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* SettingsViews.swift */; };
+		A00000000000000000000019 /* Stores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* Stores.swift */; };
+		A0000000000000000000001A /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000C /* Utilities.swift */; };
+		A0000000000000000000001B /* WeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000D /* WeatherStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A00000000000000000000001 /* Sources/OrpytApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/OrpytApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000001 /* OrpytApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrpytApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000002 /* Orpyt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Orpyt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000003 /* Orpyt.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Orpyt.entitlements; sourceTree = "<group>"; };
 		A00000000000000000000004 /* Assets/logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Assets/logo.png; sourceTree = "<group>"; };
 		A00000000000000000000005 /* Assets/desktop-orpyt.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Assets/desktop-orpyt.png"; sourceTree = "<group>"; };
 		A00000000000000000000006 /* Assets/appstore.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Assets/appstore.png; sourceTree = "<group>"; };
+		A00000000000000000000007 /* ClockCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockCardViews.swift; sourceTree = "<group>"; };
+		A00000000000000000000008 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A00000000000000000000009 /* PopoverViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverViews.swift; sourceTree = "<group>"; };
+		A0000000000000000000000A /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
+		A0000000000000000000000B /* Stores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stores.swift; sourceTree = "<group>"; };
+		A0000000000000000000000C /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
+		A0000000000000000000000D /* WeatherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -43,7 +57,7 @@
 		A00000000000000000000032 /*  */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000001 /* Sources/OrpytApp.swift */,
+				A00000000000000000000035 /* Sources */,
 				A00000000000000000000003 /* Orpyt.entitlements */,
 				A00000000000000000000034 /*  */,
 			);
@@ -66,6 +80,37 @@
 				A00000000000000000000004 /* Assets/logo.png */,
 			);
 			name = "";
+			sourceTree = "<group>";
+		};
+		A00000000000000000000035 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000036 /* App */,
+				A00000000000000000000037 /* OrpytCore */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000036 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000001 /* OrpytApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000037 /* OrpytCore */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000007 /* ClockCardViews.swift */,
+				A00000000000000000000008 /* Models.swift */,
+				A00000000000000000000009 /* PopoverViews.swift */,
+				A0000000000000000000000A /* SettingsViews.swift */,
+				A0000000000000000000000B /* Stores.swift */,
+				A0000000000000000000000C /* Utilities.swift */,
+				A0000000000000000000000D /* WeatherStore.swift */,
+			);
+			path = OrpytCore;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -139,7 +184,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A00000000000000000000011 /* Sources/OrpytApp.swift in Sources */,
+				A00000000000000000000011 /* OrpytApp.swift in Sources */,
+				A00000000000000000000015 /* ClockCardViews.swift in Sources */,
+				A00000000000000000000016 /* Models.swift in Sources */,
+				A00000000000000000000017 /* PopoverViews.swift in Sources */,
+				A00000000000000000000018 /* SettingsViews.swift in Sources */,
+				A00000000000000000000019 /* Stores.swift in Sources */,
+				A0000000000000000000001A /* Utilities.swift in Sources */,
+				A0000000000000000000001B /* WeatherStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

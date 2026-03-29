@@ -84,151 +84,168 @@ public struct StatusPopoverView: View {
             ZStack(alignment: .topLeading) {
                 PopoverBackdrop(palette: palette)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center, spacing: 12) {
-                        headerContent
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Color.clear
+                                .frame(height: 0)
+                                .id("popoverTop")
 
-                        Spacer()
+                            HStack(alignment: .center, spacing: 12) {
+                                headerContent
 
-                        HStack(spacing: 8) {
-                            CompactGlassButton(
-                                symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
+                                Spacer()
+
+                                HStack(spacing: 8) {
+                                    CompactGlassButton(
+                                        symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
+                                        palette: palette,
+                                        action: toggleQuickSearch
+                                    )
+                                    .help(isQuickSearchPresented ? "Close search" : "Search cities")
+                                    CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
+                                        .help("Swap clocks")
+                                    CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: onOpenSettings)
+                                        .help("Open settings")
+                                    CompactGlassButton(symbol: "power", palette: palette) {
+                                        onQuit()
+                                    }
+                                    .help("Quit Orpyt")
+                                }
+                            }
+
+                            if isQuickSearchPresented {
+                                PopoverQuickSearchView(
+                                    searchText: $quickSearchText,
+                                    targetSlot: $quickSearchTarget,
+                                    availableSlots: visibleSlots,
+                                    results: quickSearchResults,
+                                    onSelect: applyQuickSearch(_:),
+                                    onUseCurrentTimeZone: useCurrentTimeZoneForQuickSearch
+                                )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            HStack(spacing: 12) {
+                                if settings.showPrimaryClock {
+                                    Button {
+                                        toggleEditor(.primary)
+                                    } label: {
+                                        ClockCardView(
+                                            slot: .primary,
+                                            title: "Primary",
+                                            label: settings.displayLabel(
+                                                for: settings.primaryTimeZoneID,
+                                                customLabel: settings.primaryCustomLabel
+                                            ),
+                                            timeZoneID: settings.primaryTimeZoneID,
+                                            settings: settings,
+                                            weatherState: weatherStore.state(for: .primary),
+                                            date: displayedDate,
+                                            isEditing: activeEditorSlot == .primary,
+                                            palette: palette
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                                }
+
+                                if settings.showSecondaryClock {
+                                    Button {
+                                        toggleEditor(.secondary)
+                                    } label: {
+                                        ClockCardView(
+                                            slot: .secondary,
+                                            title: "Secondary",
+                                            label: settings.displayLabel(
+                                                for: settings.secondaryTimeZoneID,
+                                                customLabel: settings.secondaryCustomLabel
+                                            ),
+                                            timeZoneID: settings.secondaryTimeZoneID,
+                                            settings: settings,
+                                            weatherState: weatherStore.state(for: .secondary),
+                                            date: displayedDate,
+                                            isEditing: activeEditorSlot == .secondary,
+                                            palette: palette
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                                }
+                            }
+
+                            if let activeEditorSlot {
+                                InlineTimeZoneEditorView(
+                                    title: activeEditorSlot == .primary ? "Edit Primary Clock" : "Edit Secondary Clock",
+                                    selectedTimeZoneID: selectedTimeZoneBinding(for: activeEditorSlot),
+                                    customLabel: customLabelBinding(for: activeEditorSlot),
+                                    searchText: searchBinding(for: activeEditorSlot),
+                                    onDone: { self.activeEditorSlot = nil }
+                                )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            if settings.showCalendarEvents {
+                                NextMeetingSnippetView(
+                                    state: calendarStore.state,
+                                    now: context.date,
+                                    primaryTimeZoneID: settings.primaryTimeZoneID,
+                                    onOpenMeeting: openMeeting
+                                )
+                            }
+
+                            LazyVGrid(columns: [
+                                GridItem(.flexible(), spacing: 10),
+                                GridItem(.flexible(), spacing: 10),
+                            ], spacing: 10) {
+                                QuickSettingChip(
+                                    title: settings.use24HourClock ? "24h" : "12h",
+                                    subtitle: "Clock mode",
+                                    isOn: $settings.use24HourClock,
+                                    palette: palette
+                                )
+
+                                QuickSettingChip(
+                                    title: settings.showSeconds ? "Seconds On" : "Seconds Off",
+                                    subtitle: "Precision",
+                                    isOn: $settings.showSeconds,
+                                    palette: palette
+                                )
+
+                                if settings.enableWeather {
+                                    QuickSettingChip(
+                                        title: settings.showWeatherInMenuBar ? "Weather Icons" : "Ambient Icons",
+                                        subtitle: "Menu bar",
+                                        isOn: $settings.showWeatherInMenuBar,
+                                        palette: palette
+                                    )
+                                }
+                            }
+
+                            TimeScrollerStrip(
+                                timeShiftMinutes: $timeShiftMinutes,
                                 palette: palette,
-                                action: toggleQuickSearch
+                                isMuted: settings.muteScrollerSound
                             )
-                            .help(isQuickSearchPresented ? "Close search" : "Search cities")
-                            CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
-                                .help("Swap clocks")
-                            CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: onOpenSettings)
-                                .help("Open settings")
-                            CompactGlassButton(symbol: "power", palette: palette) {
-                                onQuit()
+
+                            if settings.enableWeather, let attribution = weatherStore.attribution {
+                                WeatherAttributionFooterView(attribution: attribution)
                             }
-                            .help("Quit Orpyt")
+                        }
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .onChange(of: isQuickSearchPresented) { _ in
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            scrollProxy.scrollTo("popoverTop", anchor: .top)
                         }
                     }
-
-                    if isQuickSearchPresented {
-                        PopoverQuickSearchView(
-                            searchText: $quickSearchText,
-                            targetSlot: $quickSearchTarget,
-                            availableSlots: visibleSlots,
-                            results: quickSearchResults,
-                            onSelect: applyQuickSearch(_:),
-                            onUseCurrentTimeZone: useCurrentTimeZoneForQuickSearch
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    HStack(spacing: 12) {
-                        if settings.showPrimaryClock {
-                            Button {
-                                toggleEditor(.primary)
-                            } label: {
-                                ClockCardView(
-                                    slot: .primary,
-                                    title: "Primary",
-                                    label: settings.displayLabel(
-                                        for: settings.primaryTimeZoneID,
-                                        customLabel: settings.primaryCustomLabel
-                                    ),
-                                    timeZoneID: settings.primaryTimeZoneID,
-                                    settings: settings,
-                                    weatherState: weatherStore.state(for: .primary),
-                                    date: displayedDate,
-                                    isEditing: activeEditorSlot == .primary,
-                                    palette: palette
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                    .onChange(of: activeEditorSlot) { _ in
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            scrollProxy.scrollTo("popoverTop", anchor: .top)
                         }
-
-                        if settings.showSecondaryClock {
-                            Button {
-                                toggleEditor(.secondary)
-                            } label: {
-                                ClockCardView(
-                                    slot: .secondary,
-                                    title: "Secondary",
-                                    label: settings.displayLabel(
-                                        for: settings.secondaryTimeZoneID,
-                                        customLabel: settings.secondaryCustomLabel
-                                    ),
-                                    timeZoneID: settings.secondaryTimeZoneID,
-                                    settings: settings,
-                                    weatherState: weatherStore.state(for: .secondary),
-                                    date: displayedDate,
-                                    isEditing: activeEditorSlot == .secondary,
-                                    palette: palette
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .orpytClickableHover(scale: 1.008, brightness: 0.012)
-                        }
-                    }
-                    .background(Color.clear)
-
-                    if let activeEditorSlot {
-                        InlineTimeZoneEditorView(
-                            title: activeEditorSlot == .primary ? "Edit Primary Clock" : "Edit Secondary Clock",
-                            selectedTimeZoneID: selectedTimeZoneBinding(for: activeEditorSlot),
-                            customLabel: customLabelBinding(for: activeEditorSlot),
-                            searchText: searchBinding(for: activeEditorSlot),
-                            onDone: { self.activeEditorSlot = nil }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    if settings.showCalendarEvents {
-                        NextMeetingSnippetView(
-                            state: calendarStore.state,
-                            now: context.date,
-                            primaryTimeZoneID: settings.primaryTimeZoneID,
-                            onOpenMeeting: openMeeting
-                        )
-                    }
-
-                    LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                    ], spacing: 10) {
-                        QuickSettingChip(
-                            title: settings.use24HourClock ? "24h" : "12h",
-                            subtitle: "Clock mode",
-                            isOn: $settings.use24HourClock,
-                            palette: palette
-                        )
-
-                        QuickSettingChip(
-                            title: settings.showSeconds ? "Seconds On" : "Seconds Off",
-                            subtitle: "Precision",
-                            isOn: $settings.showSeconds,
-                            palette: palette
-                        )
-
-                        if settings.enableWeather {
-                            QuickSettingChip(
-                                title: settings.showWeatherInMenuBar ? "Weather Icons" : "Ambient Icons",
-                                subtitle: "Menu bar",
-                                isOn: $settings.showWeatherInMenuBar,
-                                palette: palette
-                            )
-                        }
-                    }
-
-                    TimeScrollerStrip(
-                        timeShiftMinutes: $timeShiftMinutes,
-                        palette: palette,
-                        isMuted: settings.muteScrollerSound
-                    )
-
-                    if settings.enableWeather, let attribution = weatherStore.attribution {
-                        WeatherAttributionFooterView(attribution: attribution)
                     }
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .frame(width: 452)
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))

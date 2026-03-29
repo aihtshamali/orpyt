@@ -2,11 +2,14 @@ import AppKit
 import Combine
 import CoreLocation
 import EventKit
-import OrpytCore
 import Security
 import ServiceManagement
 import SwiftUI
 import WeatherKit
+
+#if canImport(OrpytCore)
+import OrpytCore
+#endif
 
 @main
 struct OrpytApp: App {
@@ -332,7 +335,10 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func updatePopoverSize(for measuredHeight: CGFloat) {
-        let targetHeight = min(max((measuredHeight + Metrics.popoverHeightPadding).rounded(.up), Metrics.popoverMinHeight), Metrics.popoverMaxHeight)
+        let targetHeight = min(
+            max((measuredHeight + Metrics.popoverHeightPadding).rounded(.up), Metrics.popoverMinHeight),
+            maximumPopoverHeight()
+        )
         guard abs(targetHeight - lastMeasuredPopoverHeight) > 8 else { return }
 
         lastMeasuredPopoverHeight = targetHeight
@@ -340,6 +346,26 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             guard let self, self.popover.isShown else { return }
             self.popover.contentSize = NSSize(width: Metrics.popoverWidth, height: targetHeight)
         }
+    }
+
+    private func maximumPopoverHeight() -> CGFloat {
+        guard
+            let button = statusItem.button,
+            let buttonWindow = button.window,
+            let screen = buttonWindow.screen
+        else {
+            return Metrics.popoverMaxHeight
+        }
+
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+        let visibleFrame = screen.visibleFrame
+        let availableBelowButton = buttonFrameOnScreen.minY - visibleFrame.minY - 16
+
+        return min(
+            Metrics.popoverMaxHeight,
+            max(Metrics.popoverMinHeight, availableBelowButton)
+        )
     }
 
     private func refreshWeather(force: Bool) {
