@@ -26,6 +26,10 @@ struct OrpytApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusBarController?
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        statusController?.reCheckCalendarIfNeeded()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -399,6 +403,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    func reCheckCalendarIfNeeded() {
+        guard settings.showCalendarEvents else { return }
+        Task { await calendarStore.enable(using: settings) }
     }
 
     private func refreshCalendar(force: Bool) {

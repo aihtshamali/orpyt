@@ -190,7 +190,10 @@ public struct StatusPopoverView: View {
                                     state: calendarStore.state,
                                     now: context.date,
                                     primaryTimeZoneID: settings.primaryTimeZoneID,
-                                    onOpenMeeting: openMeeting
+                                    onOpenMeeting: openMeeting,
+                                    onRequestAccess: {
+                                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                                    }
                                 )
                             }
 

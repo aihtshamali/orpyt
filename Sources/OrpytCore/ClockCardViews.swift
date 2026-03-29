@@ -378,6 +378,7 @@ public struct NextMeetingSnippetView: View {
     public let now: Date
     public let primaryTimeZoneID: String
     public let onOpenMeeting: (MeetingSnapshot) -> Void
+    public let onRequestAccess: () -> Void
 
     public var body: some View {
         Group {
@@ -385,9 +386,18 @@ public struct NextMeetingSnippetView: View {
             case .disabled:
                 EmptyView()
             case .needsPermission:
-                cardSurface(interactive: false) {
-                    summaryRow(symbol: "calendar.badge.exclamationmark", title: "Calendar ready", subtitle: "Turn it on in settings to show your next meeting.", showsChevron: false)
+                Button(action: onRequestAccess) {
+                    cardSurface(interactive: true) {
+                        summaryRow(
+                            symbol: "calendar.badge.exclamationmark",
+                            title: "Allow Calendar Access",
+                            subtitle: "Tap to open Privacy settings and enable Orpyt.",
+                            showsChevron: true
+                        )
+                    }
                 }
+                .buttonStyle(.plain)
+                .orpytClickableHover(scale: 1.012, brightness: 0.014)
             case .loading:
                 cardSurface(interactive: false) {
                     summaryRow(symbol: "calendar", title: "Checking your calendar", subtitle: "Looking for the next event.", showsChevron: false)
@@ -413,10 +423,19 @@ public struct NextMeetingSnippetView: View {
                         summaryRow(symbol: "calendar", title: "No upcoming meetings", subtitle: "Nothing scheduled in the next 24 hours.", showsChevron: false)
                     }
                 }
-            case let .failed(message):
-                cardSurface(interactive: false) {
-                    summaryRow(symbol: "calendar.badge.exclamationmark", title: "Calendar unavailable", subtitle: message, showsChevron: false)
+            case .failed:
+                Button(action: onRequestAccess) {
+                    cardSurface(interactive: true) {
+                        summaryRow(
+                            symbol: "calendar.badge.exclamationmark",
+                            title: "Calendar Access Denied",
+                            subtitle: "Tap to open Privacy & Security settings.",
+                            showsChevron: true
+                        )
+                    }
                 }
+                .buttonStyle(.plain)
+                .orpytClickableHover(scale: 1.012, brightness: 0.014)
             }
         }
     }
