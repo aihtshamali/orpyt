@@ -1,89 +1,106 @@
 # ✨ Contributing to Orpyt
 
-Welcome — we’re glad you’re here.
+Orpyt is a design-first macOS app focused on simplicity, clarity, and a premium user experience.
 
-Orpyt is built with a focus on simplicity, precision, and thoughtful design.  
-We welcome contributions that align with these values.
-
----
-
-## 🚀 Getting Started
-
-1. **Fork the repository**
-2. **Create a branch**
-
-feature/your-feature-name
-
-3. **Make your changes**
-4. **Open a Pull Request (PR)**  
-Include a clear description of what you’ve done and why.
+We welcome contributions — but we are intentionally selective to maintain quality.
 
 ---
 
-## 🧩 Contribution Principles
+## 🎯 Project Philosophy
 
-To keep Orpyt clean and consistent:
+Orpyt is:
+- minimal
+- fast
+- native to macOS
+- focused on doing a few things extremely well
 
-- **Clarity first** — write readable, intentional code  
-- **Minimalism** — avoid unnecessary complexity  
-- **Consistency** — follow existing patterns and structure  
-- **Purpose-driven** — every change should improve the product  
-
----
-
-## 🛠 Code Guidelines
-
-- Use meaningful variable and function names  
-- Keep functions small and focused  
-- Prefer simple solutions over clever ones  
-- Match the existing code style  
+Not every feature belongs here.
 
 ---
 
-## 📝 Documentation
+## 🚫 What We Avoid
 
-Good code explains *how*.  
-Good documentation explains *why*.
-
-Please:
-- Document non-obvious decisions  
-- Update relevant docs when needed  
-- Keep things concise and useful  
+- Feature bloat  
+- Overengineered solutions  
+- Non-native UI patterns  
+- Unnecessary dependencies  
 
 ---
 
-## 🔐 Security
+## ✅ Contribution Rules
 
-- Never include API keys, secrets, or credentials  
-- Use environment variables for sensitive data  
-
----
-
-## 💡 Pro Tips
-
-- Keep PRs **small and focused** (easier to review)  
-- Write **clear commit messages**  
-- Open an issue first if you’re unsure about a change  
+### 1. Stay within scope
+Changes must align with Orpyt’s purpose:
+> a clean, minimal, high-quality time zone utility
 
 ---
 
-## 🤝 Review Process
-
-All contributions are reviewed before merging.
-
-Feedback is meant to improve quality — not criticize.  
-We value thoughtful collaboration.
+### 2. Prefer simplicity
+- Avoid unnecessary abstractions  
+- Keep logic easy to follow  
+- Choose clarity over cleverness  
 
 ---
 
-## 🌱 Philosophy
-
-Orpyt isn’t just about functionality —  
-it’s about creating a calm, refined experience.
-
-If your contribution makes the app feel *simpler*, *cleaner*, or *more intuitive*,  
-you’re on the right track.
+### 3. Follow macOS conventions
+- Respect Apple Human Interface Guidelines  
+- Use native patterns (SwiftUI/AppKit)  
+- Avoid custom UI unless justified  
 
 ---
 
-**Thanks for contributing ✨**
+### 4. Maintain code quality
+- Write clean, readable, consistent code  
+- Use meaningful names  
+- Avoid dead or commented-out code  
+
+---
+
+### 5. Discuss before building
+For new features:
+- Open an issue first  
+- Align on direction before coding  
+
+Unapproved feature PRs may be closed.
+
+---
+
+### 6. Keep PRs focused
+- One purpose per PR  
+- Clear description of changes  
+- Explain *why*, not just *what*  
+
+---
+
+### 7. No secrets
+Never include:
+- API keys  
+- credentials  
+- sensitive data  
+
+---
+
+### 8. Respect the experience
+UI/UX changes must:
+- improve clarity  
+- reduce friction  
+- or enhance usability  
+
+Not just “look different”.
+
+---
+
+## 💡 Guiding Principle
+
+If a change makes Orpyt feel:
+- simpler  
+- faster  
+- more intuitive  
+
+…it’s probably a good contribution.
+
+If it adds complexity without clear value, it’s likely not.
+
+---
+
+Thanks for helping keep Orpyt focused and high-quality ✨

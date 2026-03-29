@@ -1,6 +1,9 @@
 import AppKit
 import Combine
 import CoreLocation
+import EventKit
+import Security
+import ServiceManagement
 import SwiftUI
 import WeatherKit
 
@@ -22,19 +25,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        if let logoImage = AppAssetLoader.logoImage() {
-            NSApp.applicationIconImage = logoImage
-            NSWorkspace.shared.setIcon(logoImage, forFile: Bundle.main.bundlePath, options: [])
+        if let appIconImage = AppAssetLoader.appIconImage() {
+            NSApp.applicationIconImage = appIconImage
+            NSWorkspace.shared.setIcon(appIconImage, forFile: Bundle.main.bundlePath, options: [])
         }
 
         let settings = ClockSettingsStore.shared
         let weatherStore = WeatherStore.shared
-        let settingsWindowController = SettingsWindowController(settings: settings, weatherStore: weatherStore)
+        let calendarStore = CalendarStore.shared
+        let shouldOpenSettingsOnLaunch = settings.performInitialSetupIfNeeded()
+        _ = LaunchAtLoginManager.shared
+        calendarStore.prepareForLaunch(using: settings)
+        let settingsWindowController = SettingsWindowController(
+            settings: settings,
+            weatherStore: weatherStore,
+            calendarStore: calendarStore
+        )
         statusController = StatusBarController(
             settings: settings,
             weatherStore: weatherStore,
+            calendarStore: calendarStore,
             settingsWindowController: settingsWindowController
         )
+
+        if shouldOpenSettingsOnLaunch {
+            DispatchQueue.main.async {
+                settingsWindowController.show()
+            }
+        }
     }
 }
 
@@ -42,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private final class StatusBarController: NSObject, NSPopoverDelegate {
     private let settings: ClockSettingsStore
     private let weatherStore: WeatherStore
+    private let calendarStore: CalendarStore
     private let settingsWindowController: SettingsWindowController
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
@@ -49,6 +68,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var lastWeatherRefreshDate = Date.distantPast
+    private var lastCalendarRefreshDate = Date.distantPast
     private var lastMeasuredPopoverHeight: CGFloat = 0
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
@@ -56,10 +76,12 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     init(
         settings: ClockSettingsStore,
         weatherStore: WeatherStore,
+        calendarStore: CalendarStore,
         settingsWindowController: SettingsWindowController
     ) {
         self.settings = settings
         self.weatherStore = weatherStore
+        self.calendarStore = calendarStore
         self.settingsWindowController = settingsWindowController
         super.init()
         configureStatusItem()
@@ -67,9 +89,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         installOutsideClickMonitors()
         observeSettings()
         observeWeatherSettings()
+        observeCalendarSettings()
         observeWeather()
         startTimer()
         refreshWeather(force: true)
+        refreshCalendar(force: true)
         updateDisplay()
     }
 
@@ -195,6 +219,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     @objc private func handleTimerTick() {
         updateDisplay()
         refreshWeather(force: false)
+        refreshCalendar(force: false)
     }
 
     @objc private func togglePopover(_ sender: AnyObject?) {
@@ -260,6 +285,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         let baseView = StatusPopoverView(
             settings: settings,
             weatherStore: weatherStore,
+            calendarStore: calendarStore,
             appearanceMode: settings.appearanceMode,
             onOpenSettings: { [weak self] in self?.openSettings() },
             onSwapTimeZones: { [weak self, weak settings] in
@@ -289,7 +315,10 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         guard abs(targetHeight - lastMeasuredPopoverHeight) > 8 else { return }
 
         lastMeasuredPopoverHeight = targetHeight
-        popover.contentSize = NSSize(width: 452, height: targetHeight)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.popover.isShown else { return }
+            self.popover.contentSize = NSSize(width: 452, height: targetHeight)
+        }
     }
 
     private func refreshWeather(force: Bool) {
@@ -308,6 +337,40 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         lastWeatherRefreshDate = now
         weatherStore.refresh(for: settings)
     }
+
+    private func observeCalendarSettings() {
+        settings.$showCalendarEvents
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isEnabled in
+                guard let self else { return }
+                if isEnabled {
+                    Task { await self.calendarStore.enable(using: self.settings) }
+                } else {
+                    self.calendarStore.disable()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshCalendar(force: Bool) {
+        guard settings.showCalendarEvents else {
+            calendarStore.disable()
+            return
+        }
+
+        let refreshInterval: TimeInterval = 5 * 60
+        let now = Date()
+
+        guard force || now.timeIntervalSince(lastCalendarRefreshDate) >= refreshInterval else {
+            return
+        }
+
+        lastCalendarRefreshDate = now
+        Task {
+            await calendarStore.refresh(using: settings)
+        }
+    }
 }
 
 @MainActor
@@ -315,11 +378,13 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     private var didCenterWindow = false
     private let settings: ClockSettingsStore
     private let weatherStore: WeatherStore
+    private let calendarStore: CalendarStore
     private let hostingController: NSHostingController<AnyView>
 
-    init(settings: ClockSettingsStore, weatherStore: WeatherStore) {
+    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore) {
         self.settings = settings
         self.weatherStore = weatherStore
+        self.calendarStore = calendarStore
         hostingController = NSHostingController(rootView: AnyView(EmptyView()))
         let window = OrpytSettingsWindow(contentViewController: hostingController)
 
@@ -337,7 +402,9 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         super.init(window: window)
         shouldCascadeWindows = false
         window.delegate = self
-        hostingController.rootView = AnyView(SettingsView(settings: settings, weatherStore: weatherStore))
+        hostingController.rootView = AnyView(
+            SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
+        )
         refreshAppearance()
     }
 
@@ -378,6 +445,7 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
 private final class ClockSettingsStore: ObservableObject {
     static let shared = ClockSettingsStore()
 
+    @Published private(set) var hasCompletedFirstLaunch: Bool { didSet { save() } }
     @Published var primaryTimeZoneID: String { didSet { save() } }
     @Published var secondaryTimeZoneID: String { didSet { save() } }
     @Published var primaryCustomLabel: String { didSet { save() } }
@@ -439,16 +507,21 @@ private final class ClockSettingsStore: ObservableObject {
     @Published var showFeelsLikeTemperature: Bool { didSet { save() } }
     @Published var primaryWeatherLocation: String { didSet { save() } }
     @Published var secondaryWeatherLocation: String { didSet { save() } }
+    @Published var showCalendarEvents: Bool { didSet { save() } }
+    @Published var muteScrollerSound: Bool { didSet { save() } }
     @Published var appearanceModeRawValue: String { didSet { save() } }
 
     private let defaults = UserDefaults.standard
 
     private init() {
+        hasCompletedFirstLaunch = defaults.object(forKey: SettingsKeys.hasCompletedFirstLaunch) as? Bool ?? false
         let savedPrimary = defaults.string(forKey: SettingsKeys.primaryTimeZoneID) ?? TimeZoneCatalog.defaultPrimaryID
-        let savedSecondary = defaults.string(forKey: SettingsKeys.secondaryTimeZoneID) ?? TimeZoneCatalog.defaultSecondaryID
+        let savedSecondary = defaults.string(forKey: SettingsKeys.secondaryTimeZoneID)
+            ?? TimeZoneCatalog.defaultSecondaryID(relativeTo: savedPrimary)
 
         primaryTimeZoneID = TimeZoneCatalog.option(for: savedPrimary)?.id ?? TimeZoneCatalog.defaultPrimaryID
-        secondaryTimeZoneID = TimeZoneCatalog.option(for: savedSecondary)?.id ?? TimeZoneCatalog.defaultSecondaryID
+        secondaryTimeZoneID = TimeZoneCatalog.option(for: savedSecondary)?.id
+            ?? TimeZoneCatalog.defaultSecondaryID(relativeTo: savedPrimary)
         primaryCustomLabel = defaults.string(forKey: SettingsKeys.primaryCustomLabel) ?? ""
         secondaryCustomLabel = defaults.string(forKey: SettingsKeys.secondaryCustomLabel) ?? ""
         showPrimaryClock = defaults.object(forKey: SettingsKeys.showPrimaryClock) as? Bool ?? true
@@ -467,7 +540,27 @@ private final class ClockSettingsStore: ObservableObject {
         showFeelsLikeTemperature = defaults.object(forKey: SettingsKeys.showFeelsLikeTemperature) as? Bool ?? true
         primaryWeatherLocation = defaults.string(forKey: SettingsKeys.primaryWeatherLocation) ?? ""
         secondaryWeatherLocation = defaults.string(forKey: SettingsKeys.secondaryWeatherLocation) ?? ""
+        showCalendarEvents = defaults.object(forKey: SettingsKeys.showCalendarEvents) as? Bool ?? false
+        muteScrollerSound = defaults.object(forKey: SettingsKeys.muteScrollerSound) as? Bool ?? false
         appearanceModeRawValue = defaults.string(forKey: SettingsKeys.appearanceModeRawValue) ?? AppearanceMode.system.rawValue
+    }
+
+    func performInitialSetupIfNeeded() -> Bool {
+        guard !hasCompletedFirstLaunch else { return false }
+
+        let primaryIdentifier = TimeZone.current.identifier
+        let secondaryIdentifier = TimeZoneCatalog.defaultSecondaryID(relativeTo: primaryIdentifier)
+
+        primaryTimeZoneID = TimeZoneCatalog.option(for: primaryIdentifier)?.id ?? primaryIdentifier
+        secondaryTimeZoneID = TimeZoneCatalog.option(for: secondaryIdentifier)?.id ?? secondaryIdentifier
+        primaryCustomLabel = ""
+        secondaryCustomLabel = ""
+        showPrimaryClock = true
+        showSecondaryClock = true
+        enableWeather = false
+        showCalendarEvents = false
+        hasCompletedFirstLaunch = true
+        return true
     }
 
     func swapTimeZones() {
@@ -505,6 +598,7 @@ private final class ClockSettingsStore: ObservableObject {
     }
 
     private func save() {
+        defaults.set(hasCompletedFirstLaunch, forKey: SettingsKeys.hasCompletedFirstLaunch)
         defaults.set(primaryTimeZoneID, forKey: SettingsKeys.primaryTimeZoneID)
         defaults.set(secondaryTimeZoneID, forKey: SettingsKeys.secondaryTimeZoneID)
         defaults.set(primaryCustomLabel, forKey: SettingsKeys.primaryCustomLabel)
@@ -525,11 +619,14 @@ private final class ClockSettingsStore: ObservableObject {
         defaults.set(showFeelsLikeTemperature, forKey: SettingsKeys.showFeelsLikeTemperature)
         defaults.set(primaryWeatherLocation, forKey: SettingsKeys.primaryWeatherLocation)
         defaults.set(secondaryWeatherLocation, forKey: SettingsKeys.secondaryWeatherLocation)
+        defaults.set(showCalendarEvents, forKey: SettingsKeys.showCalendarEvents)
+        defaults.set(muteScrollerSound, forKey: SettingsKeys.muteScrollerSound)
         defaults.set(appearanceModeRawValue, forKey: SettingsKeys.appearanceModeRawValue)
     }
 }
 
 private enum SettingsKeys {
+    static let hasCompletedFirstLaunch = "hasCompletedFirstLaunch"
     static let primaryTimeZoneID = "primaryTimeZoneID"
     static let secondaryTimeZoneID = "secondaryTimeZoneID"
     static let primaryCustomLabel = "primaryCustomLabel"
@@ -550,7 +647,74 @@ private enum SettingsKeys {
     static let showFeelsLikeTemperature = "showFeelsLikeTemperature"
     static let primaryWeatherLocation = "primaryWeatherLocation"
     static let secondaryWeatherLocation = "secondaryWeatherLocation"
+    static let showCalendarEvents = "showCalendarEvents"
+    static let muteScrollerSound = "muteScrollerSound"
     static let appearanceModeRawValue = "appearanceModeRawValue"
+}
+
+@MainActor
+private final class LaunchAtLoginManager: ObservableObject {
+    static let shared = LaunchAtLoginManager()
+
+    @Published private(set) var isEnabled = false
+    @Published private(set) var statusMessage = "Start Orpyt automatically when you sign in."
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var isAvailable = true
+
+    private init() {
+        refresh()
+    }
+
+    func refresh() {
+        guard #available(macOS 13.0, *) else {
+            isAvailable = false
+            isEnabled = false
+            statusMessage = "Launch at login requires a newer macOS release."
+            return
+        }
+
+        isAvailable = true
+        errorMessage = nil
+
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            isEnabled = true
+            statusMessage = "Orpyt will open automatically after you sign in."
+        case .requiresApproval:
+            isEnabled = true
+            statusMessage = "Enable Orpyt in Login Items to finish setup."
+        case .notRegistered:
+            isEnabled = false
+            statusMessage = "Start Orpyt automatically when you sign in."
+        case .notFound:
+            isEnabled = false
+            statusMessage = "Launch at login needs a signed app bundle."
+        @unknown default:
+            isEnabled = false
+            statusMessage = "Launch at login status is unavailable right now."
+        }
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard #available(macOS 13.0, *) else {
+            refresh()
+            return
+        }
+
+        errorMessage = nil
+
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        refresh()
+    }
 }
 
 private enum AppearanceMode: String, CaseIterable, Identifiable {
@@ -572,9 +736,17 @@ private enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-private enum ClockSlot {
+private enum ClockSlot: Hashable {
     case primary
     case secondary
+}
+
+private struct ClockCardFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [ClockSlot: CGRect] = [:]
+
+    static func reduce(value: inout [ClockSlot: CGRect], nextValue: () -> [ClockSlot: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
 }
 
 private struct WeatherSnapshot {
@@ -591,10 +763,26 @@ private struct WeatherAttributionSnapshot {
     let legalPageURL: URL
 }
 
+private struct MeetingSnapshot {
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let calendarName: String
+    let joinURL: URL?
+}
+
 private enum WeatherState {
     case idle
     case loading
     case loaded(WeatherSnapshot)
+    case failed(String)
+}
+
+private enum CalendarState {
+    case disabled
+    case needsPermission
+    case loading
+    case loaded(MeetingSnapshot?)
     case failed(String)
 }
 
@@ -620,6 +808,152 @@ private struct WeatherRefreshConfiguration {
 }
 
 @MainActor
+private final class CalendarStore: ObservableObject {
+    static let shared = CalendarStore()
+
+    @Published private(set) var state: CalendarState = .disabled
+
+    private let eventStore = EKEventStore()
+    private var refreshTask: Task<Void, Never>?
+
+    func prepareForLaunch(using settings: ClockSettingsStore) {
+        guard settings.showCalendarEvents else {
+            state = .disabled
+            return
+        }
+
+        let authorization = authorizationStatus
+        if isAuthorized(authorization) {
+            Task { await refresh(using: settings) }
+        } else if authorization == .notDetermined {
+            state = .needsPermission
+        } else {
+            state = .failed("Calendar access is off")
+        }
+    }
+
+    func enable(using settings: ClockSettingsStore) async {
+        let authorization = authorizationStatus
+
+        if isAuthorized(authorization) {
+            await refresh(using: settings)
+            return
+        }
+
+        if authorization == .denied || authorization == .restricted {
+            state = .failed("Calendar access is off")
+            return
+        }
+
+        state = .loading
+
+        do {
+            let granted: Bool
+            if #available(macOS 14.0, *) {
+                granted = try await eventStore.requestFullAccessToEvents()
+            } else {
+                granted = try await requestLegacyEventAccess()
+            }
+
+            if granted {
+                await refresh(using: settings)
+            } else {
+                state = .failed("Calendar access is off")
+            }
+        } catch {
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    func refresh(using settings: ClockSettingsStore) async {
+        guard settings.showCalendarEvents else {
+            disable()
+            return
+        }
+
+        let authorization = authorizationStatus
+        guard isAuthorized(authorization) else {
+            state = authorization == .notDetermined ? .needsPermission : .failed("Calendar access is off")
+            return
+        }
+
+        refreshTask?.cancel()
+        state = .loading
+
+        refreshTask = Task {
+            let now = Date()
+            let endDate = now.addingTimeInterval(60 * 60 * 24)
+            let predicate = eventStore.predicateForEvents(withStart: now, end: endDate, calendars: nil)
+            let events = eventStore.events(matching: predicate)
+                .filter { !$0.isAllDay && $0.endDate > now }
+                .sorted { $0.startDate < $1.startDate }
+
+            let snapshot = events.first.map { event -> MeetingSnapshot in
+                MeetingSnapshot(
+                    title: event.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? event.title! : "Untitled meeting",
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    calendarName: event.calendar.title,
+                    joinURL: Self.extractJoinURL(from: event)
+                )
+            }
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                self.state = .loaded(snapshot)
+            }
+        }
+    }
+
+    func disable() {
+        refreshTask?.cancel()
+        state = .disabled
+    }
+
+    private static func extractJoinURL(from event: EKEvent) -> URL? {
+        // Prefer the explicit URL field on the event
+        if let url = event.url {
+            return url
+        }
+        // Fall back to scanning notes for a video call link
+        guard let notes = event.notes else { return nil }
+        let patterns = ["https://zoom.us/", "https://meet.google.com/", "https://teams.microsoft.com/", "https://us.webex.com/", "https://meet.lync.com/"]
+        let words = notes.components(separatedBy: .whitespacesAndNewlines)
+        for word in words {
+            if let url = URL(string: word), patterns.contains(where: { word.hasPrefix($0) }) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private var authorizationStatus: EKAuthorizationStatus {
+        EKEventStore.authorizationStatus(for: .event)
+    }
+
+    private func isAuthorized(_ status: EKAuthorizationStatus) -> Bool {
+        if #available(macOS 14.0, *) {
+            return status == .fullAccess || status == .authorized
+        }
+
+        return status == .authorized
+    }
+
+    private func requestLegacyEventAccess() async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            eventStore.requestAccess(to: .event) { granted, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
 private final class WeatherStore: ObservableObject {
     static let shared = WeatherStore()
 
@@ -629,6 +963,7 @@ private final class WeatherStore: ObservableObject {
 
     private let weatherService = WeatherService()
     private let urlSession = URLSession(configuration: .ephemeral)
+    private let canUseWeatherKit = WeatherKitAvailability.isEnabledForCurrentProcess
     private var refreshTask: Task<Void, Never>?
     private var geocodeCache: [String: CLLocation] = [:]
 
@@ -668,7 +1003,7 @@ private final class WeatherStore: ObservableObject {
                 )
                 : .idle
 
-            let attribution = await fetchAttribution()
+            let attribution = canUseWeatherKit ? await fetchAttribution() : nil
 
             guard !Task.isCancelled else { return }
 
@@ -758,6 +1093,10 @@ private final class WeatherStore: ObservableObject {
     }
 
     private func fetchCurrentWeather(at location: CLLocation, resolvedLocationName: String) async -> WeatherState {
+        if !canUseWeatherKit, let fallbackSnapshot = try? await fetchOpenMeteoWeather(at: location, resolvedLocationName: resolvedLocationName) {
+            return .loaded(fallbackSnapshot)
+        }
+
         do {
             let currentWeather = try await weatherService.weather(for: location, including: .current)
 
@@ -877,6 +1216,25 @@ private final class WeatherStore: ObservableObject {
     }
 }
 
+private enum WeatherKitAvailability {
+    static let isEnabledForCurrentProcess: Bool = {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let entitlement = "com.apple.developer.weatherkit" as CFString
+        guard let rawValue = SecTaskCopyValueForEntitlement(task, entitlement, nil) else {
+            return false
+        }
+
+        if CFGetTypeID(rawValue) == CFBooleanGetTypeID() {
+            return CFBooleanGetValue((rawValue as! CFBoolean))
+        }
+
+        return false
+    }()
+}
+
 private struct OpenMeteoGeocodeResponse: Decodable {
     let results: [OpenMeteoGeocodeResult]?
 }
@@ -946,14 +1304,21 @@ private enum OpenMeteoWeatherCatalog {
 private struct StatusPopoverView: View {
     @ObservedObject var settings: ClockSettingsStore
     @ObservedObject var weatherStore: WeatherStore
+    @ObservedObject var calendarStore: CalendarStore
     let appearanceMode: AppearanceMode
     let onOpenSettings: () -> Void
     let onSwapTimeZones: () -> Void
     let onQuit: () -> Void
     let onContentHeightChange: (CGFloat) -> Void
     @State private var activeEditorSlot: ClockSlot?
+    @State private var isQuickSearchPresented = false
+    @State private var quickSearchText = ""
+    @State private var quickSearchTarget: ClockSlot = .secondary
+    @State private var timeShiftMinutes = 0
+    @State private var clockCardFrames: [ClockSlot: CGRect] = [:]
     @State private var primarySearchText = ""
     @State private var secondarySearchText = ""
+    @FocusState private var isQuickSearchFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: PopoverPalette {
@@ -967,6 +1332,10 @@ private struct StatusPopoverView: View {
             height += 250
         }
 
+        if isQuickSearchPresented {
+            height += 188
+        }
+
         if settings.enableWeather {
             height += 36
         }
@@ -975,27 +1344,34 @@ private struct StatusPopoverView: View {
             height += 18
         }
 
+        if settings.showCalendarEvents {
+            height += 82
+        }
+
+        height += 86
+
         return height
     }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: settings.showSeconds ? 1 : 60)) { context in
+            let displayedDate = context.date.addingTimeInterval(TimeInterval(timeShiftMinutes * 60))
             ZStack(alignment: .topLeading) {
                 PopoverBackdrop(palette: palette)
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Orpyt")
-                                .font(.system(size: 17, weight: .semibold))
-                            Text("Synced across cities, weather, and work.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
+                        headerContent
 
                         Spacer()
 
                         HStack(spacing: 8) {
+                            CompactGlassButton(
+                                symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
+                                palette: palette,
+                                action: toggleQuickSearch
+                            )
+                            .help(isQuickSearchPresented ? "Close search" : "Search cities")
                             CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
                                 .help("Swap clocks")
                             CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: onOpenSettings)
@@ -1005,6 +1381,18 @@ private struct StatusPopoverView: View {
                             }
                             .help("Quit Orpyt")
                         }
+                    }
+
+                    if isQuickSearchPresented {
+                        PopoverQuickSearchView(
+                            searchText: $quickSearchText,
+                            targetSlot: $quickSearchTarget,
+                            availableSlots: visibleSlots,
+                            results: quickSearchResults,
+                            onSelect: applyQuickSearch(_:),
+                            onUseCurrentTimeZone: useCurrentTimeZoneForQuickSearch
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     HStack(spacing: 12) {
@@ -1022,12 +1410,21 @@ private struct StatusPopoverView: View {
                                     timeZoneID: settings.primaryTimeZoneID,
                                     settings: settings,
                                     weatherState: weatherStore.state(for: .primary),
-                                    date: context.date,
+                                    date: displayedDate,
                                     isEditing: activeEditorSlot == .primary,
                                     palette: palette
                                 )
                             }
                             .buttonStyle(.plain)
+                            .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: ClockCardFramePreferenceKey.self,
+                                        value: [.primary: proxy.frame(in: .named("popoverInteraction"))]
+                                    )
+                                }
+                            )
                         }
 
                         if settings.showSecondaryClock {
@@ -1044,14 +1441,28 @@ private struct StatusPopoverView: View {
                                     timeZoneID: settings.secondaryTimeZoneID,
                                     settings: settings,
                                     weatherState: weatherStore.state(for: .secondary),
-                                    date: context.date,
+                                    date: displayedDate,
                                     isEditing: activeEditorSlot == .secondary,
                                     palette: palette
                                 )
                             }
                             .buttonStyle(.plain)
+                            .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: ClockCardFramePreferenceKey.self,
+                                        value: [.secondary: proxy.frame(in: .named("popoverInteraction"))]
+                                    )
+                                }
+                            )
                         }
                     }
+                    .background(
+                        ScrollWheelStepCapture(activeFrames: Array(clockCardFrames.values)) { direction in
+                            stepTimeShift(by: direction)
+                        }
+                    )
 
                     if let activeEditorSlot {
                         InlineTimeZoneEditorView(
@@ -1062,6 +1473,15 @@ private struct StatusPopoverView: View {
                             onDone: { self.activeEditorSlot = nil }
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+
+                    if settings.showCalendarEvents {
+                        NextMeetingSnippetView(
+                            state: calendarStore.state,
+                            now: context.date,
+                            primaryTimeZoneID: settings.primaryTimeZoneID,
+                            onOpenMeeting: openMeeting
+                        )
                     }
 
                     LazyVGrid(columns: [
@@ -1092,6 +1512,12 @@ private struct StatusPopoverView: View {
                         }
                     }
 
+                    TimeScrollerStrip(
+                        timeShiftMinutes: $timeShiftMinutes,
+                        palette: palette,
+                        isMuted: settings.muteScrollerSound
+                    )
+
                     if settings.enableWeather, let attribution = weatherStore.attribution {
                         WeatherAttributionFooterView(attribution: attribution)
                     }
@@ -1106,17 +1532,209 @@ private struct StatusPopoverView: View {
                     .stroke(Color.white.opacity(0.22), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.18), radius: 30, x: 0, y: 18)
+            .coordinateSpace(name: "popoverInteraction")
+            .onPreferenceChange(ClockCardFramePreferenceKey.self) { frames in
+                clockCardFrames = frames
+            }
             .onAppear {
                 onContentHeightChange(preferredPopoverHeight)
             }
             .onChange(of: preferredPopoverHeight) { newValue in
                 onContentHeightChange(newValue)
             }
+            .task(id: timeShiftMinutes) {
+                guard timeShiftMinutes != 0 else { return }
+                let currentValue = timeShiftMinutes
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+
+                guard !Task.isCancelled, timeShiftMinutes == currentValue else { return }
+
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) {
+                    timeShiftMinutes = 0
+                }
+            }
         }
     }
 
     private func toggleEditor(_ slot: ClockSlot) {
+        isQuickSearchPresented = false
         activeEditorSlot = activeEditorSlot == slot ? nil : slot
+    }
+
+    private func stepTimeShift(by direction: Int) {
+        let nextValue = max(-12 * 60, min(12 * 60, timeShiftMinutes + (direction * 15)))
+        guard nextValue != timeShiftMinutes else { return }
+        timeShiftMinutes = nextValue
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+        TickFeedbackPlayer.shared.play(isMuted: settings.muteScrollerSound)
+    }
+
+    private var headerContent: some View {
+        Group {
+            if isQuickSearchPresented {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        TextField("Search city or time zone", text: $quickSearchText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .focused($isQuickSearchFocused)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(palette.chromeFill)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(palette.chromeStroke, lineWidth: 0.8)
+                    )
+
+                    if visibleSlots.count > 1 {
+                        Picker("Target", selection: $quickSearchTarget) {
+                            Text("Primary").tag(ClockSlot.primary)
+                            Text("Secondary").tag(ClockSlot.secondary)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 240)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Orpyt")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Synced across cities, weather, and work.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var visibleSlots: [ClockSlot] {
+        var slots: [ClockSlot] = []
+
+        if settings.showPrimaryClock {
+            slots.append(.primary)
+        }
+
+        if settings.showSecondaryClock {
+            slots.append(.secondary)
+        }
+
+        return slots.isEmpty ? [.primary, .secondary] : slots
+    }
+
+    private var quickSearchResults: [TimeZoneOption] {
+        let query = quickSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if query.isEmpty {
+            return quickSearchSuggestions
+        }
+
+        return Array(
+            TimeZoneCatalog.options
+                .filter { $0.searchableText.localizedCaseInsensitiveContains(query) }
+                .prefix(8)
+        )
+    }
+
+    private var quickSearchSuggestions: [TimeZoneOption] {
+        let preferredIDs = [
+            targetTimeZoneID(for: .primary),
+            targetTimeZoneID(for: .secondary),
+            TimeZone.current.identifier,
+            "Etc/UTC",
+            "Europe/London",
+            "America/New_York",
+            "Asia/Tokyo",
+            "Asia/Karachi",
+        ]
+
+        var seen = Set<String>()
+        return preferredIDs.compactMap { identifier in
+            guard seen.insert(identifier).inserted else { return nil }
+            return TimeZoneCatalog.option(for: identifier)
+        }
+    }
+
+    private func targetTimeZoneID(for slot: ClockSlot) -> String {
+        switch slot {
+        case .primary:
+            return settings.primaryTimeZoneID
+        case .secondary:
+            return settings.secondaryTimeZoneID
+        }
+    }
+
+    private func toggleQuickSearch() {
+        if isQuickSearchPresented {
+            isQuickSearchPresented = false
+            quickSearchText = ""
+            return
+        }
+
+        activeEditorSlot = nil
+        quickSearchTarget = defaultQuickSearchTarget
+        isQuickSearchPresented = true
+
+        DispatchQueue.main.async {
+            isQuickSearchFocused = true
+        }
+    }
+
+    private var defaultQuickSearchTarget: ClockSlot {
+        if visibleSlots == [.primary] {
+            return .primary
+        }
+
+        if visibleSlots == [.secondary] {
+            return .secondary
+        }
+
+        return .secondary
+    }
+
+    private func applyQuickSearch(_ option: TimeZoneOption) {
+        switch quickSearchTarget {
+        case .primary:
+            settings.primaryTimeZoneID = option.id
+        case .secondary:
+            settings.secondaryTimeZoneID = option.id
+        }
+
+        quickSearchText = ""
+        isQuickSearchPresented = false
+    }
+
+    private func useCurrentTimeZoneForQuickSearch() {
+        let currentIdentifier = TimeZone.current.identifier
+
+        switch quickSearchTarget {
+        case .primary:
+            settings.primaryTimeZoneID = currentIdentifier
+        case .secondary:
+            settings.secondaryTimeZoneID = currentIdentifier
+        }
+
+        quickSearchText = ""
+        isQuickSearchPresented = false
+    }
+
+    private func openMeeting(_ snapshot: MeetingSnapshot) {
+        if let joinURL = snapshot.joinURL {
+            NSWorkspace.shared.open(joinURL)
+            return
+        }
+        if let calendarURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: calendarURL, configuration: configuration)
+        }
     }
 
     private func selectedTimeZoneBinding(for slot: ClockSlot) -> Binding<String> {
@@ -1143,6 +1761,95 @@ private struct StatusPopoverView: View {
             return $primarySearchText
         case .secondary:
             return $secondarySearchText
+        }
+    }
+}
+
+private struct PopoverQuickSearchView: View {
+    @Binding var searchText: String
+    @Binding var targetSlot: ClockSlot
+    let availableSlots: [ClockSlot]
+    let results: [TimeZoneOption]
+    let onSelect: (TimeZoneOption) -> Void
+    let onUseCurrentTimeZone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Quick Search")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Spacer()
+
+                Button(action: onUseCurrentTimeZone) {
+                    Label("Current", systemImage: "location.fill")
+                }
+                .buttonStyle(.borderless)
+                .orpytClickableHover(scale: 1.02, brightness: 0.012)
+                .font(.system(size: 11, weight: .medium))
+            }
+
+            if availableSlots.count > 1 {
+                Text(targetSlot == .primary ? "Updating the primary clock." : "Updating the secondary clock.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Pick a city and Orpyt will update the visible clock immediately.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(results) { option in
+                    Button {
+                        onSelect(option)
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(option.displayName)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                Text(option.id)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Text(shortTargetTitle)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .orpytClickableHover(scale: 1.01, brightness: 0.015)
+
+                    if option.id != results.last?.id {
+                        Divider()
+                            .opacity(0.4)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(0.14))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
+            )
+        }
+    }
+
+    private var shortTargetTitle: String {
+        switch targetSlot {
+        case .primary:
+            return "Primary"
+        case .secondary:
+            return "Secondary"
         }
     }
 }
@@ -1259,6 +1966,7 @@ private struct CompactGlassButton: View {
                 )
         }
         .buttonStyle(.plain)
+        .orpytClickableHover(scale: 1.04, brightness: 0.02)
     }
 }
 
@@ -1295,6 +2003,261 @@ private struct QuickSettingChip: View {
             )
         }
         .buttonStyle(.plain)
+        .orpytClickableHover(scale: 1.015, brightness: 0.018)
+    }
+}
+
+private struct TimeScrollerStrip: View {
+    @Binding var timeShiftMinutes: Int
+    let palette: PopoverPalette
+    let isMuted: Bool
+
+    private var sliderValue: Binding<Double> {
+        Binding(
+            get: { Double(timeShiftMinutes) / 60.0 },
+            set: { newValue in
+                let snapped = (newValue * 4).rounded() / 4
+                timeShiftMinutes = Int(snapped * 60)
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Time Scroller")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(timeShiftMinutes == 0 ? "Showing right now across both clocks." : shiftLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button(timeShiftMinutes == 0 ? "Now" : "Reset") {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        timeShiftMinutes = 0
+                    }
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+            }
+
+            WheelScrubbingSlider(
+                value: sliderValue,
+                range: -12...12,
+                step: 0.25,
+                isMuted: isMuted
+            )
+            .frame(height: 18)
+
+            HStack {
+                Text("-12h")
+                Spacer()
+                Text("0")
+                Spacer()
+                Text("+12h")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.cardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.cardStroke, lineWidth: 0.8)
+        )
+    }
+
+    private var shiftLabel: String {
+        let absoluteMinutes = abs(timeShiftMinutes)
+        let hours = absoluteMinutes / 60
+        let minutes = absoluteMinutes % 60
+        let prefix = timeShiftMinutes > 0 ? "+" : "-"
+        if minutes == 0 {
+            return "Previewing \(prefix)\(hours)h across your clocks."
+        }
+        return "Previewing \(prefix)\(hours)h \(minutes)m across your clocks."
+    }
+}
+
+private struct ScrollWheelStepCapture: NSViewRepresentable {
+    let activeFrames: [CGRect]
+    let onStep: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.installMonitorIfNeeded()
+        let view = NSView(frame: .zero)
+        context.coordinator.hostView = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.hostView = nsView
+        context.coordinator.activeFrames = activeFrames
+        context.coordinator.onStep = onStep
+        if activeFrames.isEmpty {
+            context.coordinator.reset()
+        }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.removeMonitor()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var activeFrames: [CGRect] = []
+        var onStep: (Int) -> Void = { _ in }
+        private var eventMonitor: Any?
+        private var accumulatedDelta: CGFloat = 0
+        private let scrollThreshold: CGFloat = 6
+        weak var hostView: NSView?
+
+        func installMonitorIfNeeded() {
+            guard eventMonitor == nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let hostView = self.hostView, !self.activeFrames.isEmpty else { return event }
+
+                let localPoint = hostView.convert(event.locationInWindow, from: nil)
+                guard self.activeFrames.contains(where: { $0.contains(localPoint) }) else { return event }
+
+                let dominantDelta = abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX)
+                    ? event.scrollingDeltaY
+                    : event.scrollingDeltaX
+
+                guard abs(dominantDelta) > 0.1 else { return event }
+
+                self.accumulatedDelta += dominantDelta
+                var handled = false
+
+                while abs(self.accumulatedDelta) >= self.scrollThreshold {
+                    let direction = self.accumulatedDelta > 0 ? -1 : 1
+                    self.accumulatedDelta += self.accumulatedDelta > 0 ? -self.scrollThreshold : self.scrollThreshold
+                    self.onStep(direction)
+                    handled = true
+                }
+
+                return handled ? nil : event
+            }
+        }
+
+        func reset() {
+            accumulatedDelta = 0
+        }
+
+        func removeMonitor() {
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+                self.eventMonitor = nil
+            }
+        }
+    }
+}
+
+private struct WheelScrubbingSlider: NSViewRepresentable {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let isMuted: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(value: $value)
+    }
+
+    func makeNSView(context: Context) -> WheelScrubbingNSSlider {
+        let slider = WheelScrubbingNSSlider(value: value, minValue: range.lowerBound, maxValue: range.upperBound, target: context.coordinator, action: #selector(Coordinator.valueDidChange(_:)))
+        slider.stepValue = step
+        slider.isMuted = isMuted
+        slider.target = context.coordinator
+        slider.action = #selector(Coordinator.valueDidChange(_:))
+        return slider
+    }
+
+    func updateNSView(_ nsView: WheelScrubbingNSSlider, context: Context) {
+        nsView.minValue = range.lowerBound
+        nsView.maxValue = range.upperBound
+        nsView.stepValue = step
+        nsView.isMuted = isMuted
+        if abs(nsView.doubleValue - value) > 0.001 {
+            nsView.doubleValue = value
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        @Binding private var value: Double
+
+        init(value: Binding<Double>) {
+            _value = value
+        }
+
+        @objc func valueDidChange(_ sender: NSSlider) {
+            value = sender.doubleValue
+        }
+    }
+}
+
+private final class WheelScrubbingNSSlider: NSSlider {
+    var stepValue: Double = 0.25
+    var isMuted = false
+    private var accumulatedDelta: CGFloat = 0
+    private let scrollThreshold: CGFloat = 6
+
+    override func scrollWheel(with event: NSEvent) {
+        let dominantDelta = abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX)
+            ? event.scrollingDeltaY
+            : event.scrollingDeltaX
+
+        accumulatedDelta += dominantDelta
+
+        while abs(accumulatedDelta) >= scrollThreshold {
+            let direction = accumulatedDelta > 0 ? -1.0 : 1.0
+            accumulatedDelta += accumulatedDelta > 0 ? -scrollThreshold : scrollThreshold
+
+            let nextValue = max(minValue, min(maxValue, doubleValue + (direction * stepValue)))
+            guard abs(nextValue - doubleValue) > 0.0001 else { continue }
+
+            doubleValue = nextValue
+            sendAction(action, to: target)
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            TickFeedbackPlayer.shared.play(isMuted: isMuted)
+        }
+    }
+}
+
+@MainActor
+private final class TickFeedbackPlayer {
+    static let shared = TickFeedbackPlayer()
+
+    private let sound: NSSound?
+
+    private init() {
+        if let bundled = NSSound(named: NSSound.Name("Tink")) {
+            sound = bundled
+        } else {
+            sound = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true)
+        }
+
+        sound?.volume = 0.22
+    }
+
+    func play(isMuted: Bool = false) {
+        guard !isMuted else { return }
+        guard let sound else { return }
+        if sound.isPlaying {
+            sound.stop()
+        }
+        sound.play()
     }
 }
 
@@ -1463,9 +2426,11 @@ private struct InlineTimeZoneEditorView: View {
                     Image(systemName: "location.fill")
                 }
                 .buttonStyle(SecondaryGlassButtonStyle())
+                .orpytClickableHover(scale: 1.03, brightness: 0.015)
                 .help("Use current time zone")
                 Button("Done", action: onDone)
                     .buttonStyle(SecondaryGlassButtonStyle())
+                    .orpytClickableHover(scale: 1.03, brightness: 0.015)
             }
 
             HStack(alignment: .center, spacing: 12) {
@@ -1520,6 +2485,7 @@ private struct InlineTimeZoneEditorView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .orpytClickableHover(scale: 1.01, brightness: 0.012)
                     .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
                 }
             }
@@ -1655,9 +2621,133 @@ private struct WeatherAttributionFooterView: View {
     }
 }
 
+private struct NextMeetingSnippetView: View {
+    let state: CalendarState
+    let now: Date
+    let primaryTimeZoneID: String
+    let onOpenMeeting: (MeetingSnapshot) -> Void
+
+    var body: some View {
+        Group {
+            switch state {
+            case .disabled:
+                EmptyView()
+            case .needsPermission:
+                cardSurface(interactive: false) {
+                    summaryRow(symbol: "calendar.badge.exclamationmark", title: "Calendar ready", subtitle: "Turn it on in settings to show your next meeting.", showsChevron: false)
+                }
+            case .loading:
+                cardSurface(interactive: false) {
+                    summaryRow(symbol: "calendar", title: "Checking your calendar", subtitle: "Looking for the next event.", showsChevron: false)
+                }
+            case let .loaded(snapshot):
+                if let snapshot {
+                    Button {
+                        onOpenMeeting(snapshot)
+                    } label: {
+                        cardSurface(interactive: true) {
+                            summaryRow(
+                                symbol: "calendar",
+                                title: snapshot.title,
+                                subtitle: meetingSubtitle(for: snapshot),
+                                showsChevron: true
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .orpytClickableHover(scale: 1.012, brightness: 0.014)
+                } else {
+                    cardSurface(interactive: false) {
+                        summaryRow(symbol: "calendar", title: "No upcoming meetings", subtitle: "Nothing scheduled in the next 24 hours.", showsChevron: false)
+                    }
+                }
+            case let .failed(message):
+                cardSurface(interactive: false) {
+                    summaryRow(symbol: "calendar.badge.exclamationmark", title: "Calendar unavailable", subtitle: message, showsChevron: false)
+                }
+            }
+        }
+    }
+
+    private func summaryRow(symbol: String, title: String, subtitle: String, showsChevron: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                )
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Next Meeting")
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            if showsChevron {
+                Image(systemName: "arrow.up.forward")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private func cardSurface<Content: View>(interactive: Bool, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(interactive ? 0.16 : 0.12),
+                                Color.white.opacity(interactive ? 0.20 : 0.16),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.accentColor.opacity(interactive ? 0.28 : 0.18), lineWidth: interactive ? 1.0 : 0.9)
+            )
+            .shadow(color: Color.accentColor.opacity(interactive ? 0.10 : 0.04), radius: interactive ? 12 : 6, x: 0, y: interactive ? 7 : 3)
+    }
+
+    private func meetingSubtitle(for snapshot: MeetingSnapshot) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.timeZone = TimeZone(identifier: primaryTimeZoneID)
+        formatter.dateFormat = "h:mm a"
+
+        let relativeFormatter = RelativeDateTimeFormatter()
+        relativeFormatter.unitsStyle = .short
+
+        let startTime = formatter.string(from: snapshot.startDate)
+        let relative = relativeFormatter.localizedString(for: snapshot.startDate, relativeTo: now)
+        return "\(startTime) • \(relative) • \(snapshot.calendarName)"
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var settings: ClockSettingsStore
     @ObservedObject var weatherStore: WeatherStore
+    @ObservedObject var calendarStore: CalendarStore
     @State private var primarySearchText = ""
     @State private var secondarySearchText = ""
     @State private var selectedPane: SettingsPane? = .overview
@@ -1672,13 +2762,13 @@ private struct SettingsView: View {
             .listStyle(.sidebar)
         } detail: {
             if selectedPane == .overview {
-                SettingsOverviewPane(settings: settings, weatherStore: weatherStore)
+                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
             } else if let selectedPane {
                 SettingsPaneContainer(pane: selectedPane) {
                     detailView(for: selectedPane)
                 }
             } else {
-                SettingsOverviewPane(settings: settings, weatherStore: weatherStore)
+                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -1688,7 +2778,7 @@ private struct SettingsView: View {
     private func detailView(for pane: SettingsPane) -> some View {
         switch pane {
         case .overview:
-            SettingsOverviewPane(settings: settings, weatherStore: weatherStore)
+            SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
         case .timeZones:
             TimeZonesPane(
                 settings: settings,
@@ -1699,6 +2789,8 @@ private struct SettingsView: View {
             MenuBarPane(settings: settings)
         case .details:
             DetailsPane(settings: settings)
+        case .calendar:
+            CalendarPane(settings: settings, calendarStore: calendarStore)
         case .weather:
             WeatherPane(settings: settings)
         case .appearance:
@@ -1712,6 +2804,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     case timeZones = "Time Zones"
     case menuBar = "Menu Bar"
     case details = "Clock Details"
+    case calendar = "Calendar"
     case weather = "Weather"
     case appearance = "Appearance"
 
@@ -1723,6 +2816,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .timeZones: return "globe.americas"
         case .menuBar: return "menubar.rectangle"
         case .details: return "list.bullet.rectangle.portrait"
+        case .calendar: return "calendar"
         case .weather: return "cloud.sun"
         case .appearance: return "square.3.layers.3d.top.filled"
         }
@@ -1734,6 +2828,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .timeZones: return "Cities, labels, and ordering"
         case .menuBar: return "Compact top bar behavior"
         case .details: return "Metadata and badges"
+        case .calendar: return "Read-only next meeting context"
         case .weather: return "Weather synced with each clock"
         case .appearance: return "Popover mood and polish"
         }
@@ -1753,6 +2848,7 @@ private struct SettingsSidebarRow: View {
                 .padding(.leading, 25)
         }
         .padding(.vertical, 3)
+        .orpytClickableHover(scale: 1.01, brightness: 0.01)
     }
 }
 
@@ -1797,11 +2893,9 @@ private struct SettingsPaneContainer<Content: View>: View {
 private struct SettingsOverviewPane: View {
     @ObservedObject var settings: ClockSettingsStore
     @ObservedObject var weatherStore: WeatherStore
+    @ObservedObject var calendarStore: CalendarStore
 
-    private let metricColumns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14),
-    ]
+    private let metricColumns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 2)
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -1815,7 +2909,9 @@ private struct SettingsOverviewPane: View {
 
     private func overviewContent(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 22) {
-            OverviewHeroHeader(settings: settings, now: now)
+            OverviewHeroHeader(settings: settings)
+
+            OverviewMenuBarPreview(settings: settings, now: now)
 
             HStack(alignment: .top, spacing: 18) {
                 OverviewWeatherCard(
@@ -1862,15 +2958,15 @@ private struct SettingsOverviewPane: View {
                 }
                 return partialResult
             }
-        let systemZone = TimeZone.current.identifier.split(separator: "/").last?
-            .replacingOccurrences(of: "_", with: " ") ?? "Local"
+        let visibleClockCount = [settings.showPrimaryClock, settings.showSecondaryClock]
+            .reduce(0) { $0 + ($1 ? 1 : 0) }
 
         return [
             OverviewMetricDescriptor(
-                icon: "menubar.rectangle",
-                title: "Menu Bar",
-                value: ClockFormatter.menuBarTitle(for: now, settings: settings),
-                caption: settings.showWeatherInMenuBar ? "Weather icons" : "Ambient icons"
+                icon: "clock.arrow.circlepath",
+                title: "Clock Mode",
+                value: settings.use24HourClock ? "24h" : "12h",
+                caption: settings.showSeconds ? "Seconds live" : "Minute precision"
             ),
             OverviewMetricDescriptor(
                 icon: settings.enableWeather ? "cloud.sun.fill" : "cloud.slash",
@@ -1879,48 +2975,144 @@ private struct SettingsOverviewPane: View {
                 caption: settings.enableWeather ? "Graceful fallback enabled" : "Chronos-only mode"
             ),
             OverviewMetricDescriptor(
-                icon: "clock.arrow.circlepath",
-                title: "Clock Mode",
-                value: settings.use24HourClock ? "24h" : "12h",
-                caption: settings.showSeconds ? "Seconds live" : "Minute precision"
+                icon: "rectangle.split.2x1",
+                title: "Visible Clocks",
+                value: "\(visibleClockCount)",
+                caption: visibleClockCount == 2 ? "Both cities pinned" : "Single clock focus"
             ),
             OverviewMetricDescriptor(
-                icon: "location.circle",
-                title: "System Zone",
-                value: systemZone,
-                caption: TimeZone.current.identifier
+                icon: "calendar",
+                title: "Calendar",
+                value: settings.showCalendarEvents ? calendarMetricTitle : "Off",
+                caption: settings.showCalendarEvents ? calendarMetricCaption : "Read-only meeting context"
             ),
         ]
+    }
+
+    private var calendarMetricTitle: String {
+        switch calendarStore.state {
+        case .disabled:
+            return "Off"
+        case .needsPermission:
+            return "Needs Access"
+        case .loading:
+            return "Loading"
+        case let .loaded(snapshot):
+            return snapshot == nil ? "No Events" : "Live"
+        case .failed:
+            return "Unavailable"
+        }
+    }
+
+    private var calendarMetricCaption: String {
+        switch calendarStore.state {
+        case .disabled:
+            return "Read-only meeting context"
+        case .needsPermission:
+            return "Permission requested only on enable"
+        case .loading:
+            return "Checking the next event"
+        case let .loaded(snapshot):
+            return snapshot?.title ?? "Nothing in the next 24 hours"
+        case let .failed(message):
+            return message
+        }
     }
 }
 
 private struct OverviewHeroHeader: View {
     @ObservedObject var settings: ClockSettingsStore
-    let now: Date
+
+    private var systemZoneTitle: String {
+        TimeZone.current.identifier.split(separator: "/").last?
+            .replacingOccurrences(of: "_", with: " ") ?? "Local"
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            SettingsAppIconView(size: 56)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
+                SettingsAppIconView(size: 56)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Orpyt")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Orpyt")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
 
-                Text("A live overview for your active clocks.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    Text("A live overview for your active clocks.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
 
-                HStack(spacing: 10) {
-                    OverviewInlineTag(title: "Menu Bar", value: ClockFormatter.menuBarTitle(for: now, settings: settings))
-                    OverviewInlineTag(title: "Mode", value: settings.use24HourClock ? "24h" : "12h")
-                    OverviewInlineTag(title: "Weather", value: settings.enableWeather ? "On" : "Off")
+                Spacer(minLength: 16)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    OverviewInlineTag(title: "Appearance", value: settings.appearanceMode.title)
+                    Text("System time zone: \(systemZoneTitle)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
             }
 
-            Spacer()
-
-            OverviewInlineTag(title: "Appearance", value: settings.appearanceMode.title)
+            HStack(spacing: 8) {
+                OverviewInlineTag(title: "Mode", value: settings.use24HourClock ? "24h" : "12h")
+                OverviewInlineTag(title: "Weather", value: settings.enableWeather ? "On" : "Off")
+                OverviewInlineTag(title: "System", value: systemZoneTitle)
+            }
         }
+    }
+}
+
+private struct OverviewMenuBarPreview: View {
+    @ObservedObject var settings: ClockSettingsStore
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "menubar.rectangle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                    )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Live Menu Bar")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(ClockFormatter.menuBarTitle(for: now, settings: settings))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+
+                Spacer(minLength: 16)
+
+                OverviewInlineTag(
+                    title: "Icons",
+                    value: settings.showWeatherInMenuBar ? "Weather" : "Ambient"
+                )
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(nsColor: .controlBackgroundColor),
+                            Color.accentColor.opacity(0.05),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 0.8)
+        )
     }
 }
 
@@ -2457,8 +3649,13 @@ private struct SettingsAppIconView: View {
 
     @ViewBuilder
     private var iconContent: some View {
-        if let logoImage = AppAssetLoader.logoImage() {
-            Image(nsImage: logoImage)
+        if let brandImage = AppAssetLoader.brandImage() {
+            Image(nsImage: brandImage)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+        } else if let appIconImage = AppAssetLoader.appIconImage() {
+            Image(nsImage: appIconImage)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
@@ -2478,9 +3675,54 @@ private struct SettingsAppIconView: View {
     }
 }
 
+private struct OrpytClickableHoverModifier: ViewModifier {
+    let scale: CGFloat
+    let brightness: Double
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isHovered ? scale : 1)
+            .brightness(isHovered ? brightness : 0)
+            .animation(.easeOut(duration: 0.14), value: isHovered)
+            .onHover { hovering in
+                if hovering && !isHovered {
+                    NSCursor.pointingHand.push()
+                } else if !hovering && isHovered {
+                    NSCursor.pop()
+                }
+
+                isHovered = hovering
+            }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
+                }
+            }
+    }
+}
+
+private extension View {
+    func orpytClickableHover(scale: CGFloat = 1.01, brightness: Double = 0.01) -> some View {
+        modifier(OrpytClickableHoverModifier(scale: scale, brightness: brightness))
+    }
+}
+
 private enum AppAssetLoader {
-    static func logoImage() -> NSImage? {
-        for fileName in ["logo.png", "orpyt-logo.png", "Orpyt.icns"] {
+    static func appIconImage() -> NSImage? {
+        for fileName in ["appstore.png", "logo.png", "Orpyt.icns"] {
+            if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
+               let image = NSImage(contentsOf: url) {
+                return image
+            }
+        }
+
+        return nil
+    }
+
+    static func brandImage() -> NSImage? {
+        for fileName in ["logo.png", "appstore.png", "orpyt-logo.png"] {
             if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
                let image = NSImage(contentsOf: url) {
                 return image
@@ -2531,17 +3773,42 @@ private struct TimeZonesPane: View {
 
 private struct MenuBarPane: View {
     @ObservedObject var settings: ClockSettingsStore
+    @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
 
     var body: some View {
-        SettingsSection(title: "Displayed in Menu Bar") {
-            VStack(alignment: .leading, spacing: 12) {
-                SettingsToggleRow(title: "Show primary clock", subtitle: "Keep the first city visible in the menu bar.", isOn: $settings.showPrimaryClock)
-                SettingsToggleRow(title: "Show secondary clock", subtitle: "Keep the second city visible in the menu bar.", isOn: $settings.showSecondaryClock)
-                SettingsToggleRow(title: "Show zone labels", subtitle: "Display short city labels beside the time.", isOn: $settings.showZoneLabelInMenuBar)
-                SettingsToggleRow(title: "Show ambient icon", subtitle: "Use day or night iconography in the menu bar.", isOn: $settings.showStatusIcon)
-                SettingsToggleRow(title: "Use 24-hour time", subtitle: "Switch between 12-hour and 24-hour formats.", isOn: $settings.use24HourClock)
-                SettingsToggleRow(title: "Show seconds", subtitle: "Update the top bar every second.", isOn: $settings.showSeconds)
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsSection(title: "Startup") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsToggleRow(
+                        title: "Launch at login",
+                        subtitle: launchAtLogin.statusMessage,
+                        isOn: Binding(
+                            get: { launchAtLogin.isEnabled },
+                            set: { launchAtLogin.setEnabled($0) }
+                        )
+                    )
+
+                    if let errorMessage = launchAtLogin.errorMessage {
+                        Text(errorMessage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
+
+            SettingsSection(title: "Displayed in Menu Bar") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsToggleRow(title: "Show primary clock", subtitle: "Keep the first city visible in the menu bar.", isOn: $settings.showPrimaryClock)
+                    SettingsToggleRow(title: "Show secondary clock", subtitle: "Keep the second city visible in the menu bar.", isOn: $settings.showSecondaryClock)
+                    SettingsToggleRow(title: "Show zone labels", subtitle: "Display short city labels beside the time.", isOn: $settings.showZoneLabelInMenuBar)
+                    SettingsToggleRow(title: "Show ambient icon", subtitle: "Use day or night iconography in the menu bar.", isOn: $settings.showStatusIcon)
+                    SettingsToggleRow(title: "Use 24-hour time", subtitle: "Switch between 12-hour and 24-hour formats.", isOn: $settings.use24HourClock)
+                    SettingsToggleRow(title: "Show seconds", subtitle: "Update the top bar every second.", isOn: $settings.showSeconds)
+                }
+            }
+        }
+        .onAppear {
+            launchAtLogin.refresh()
         }
     }
 }
@@ -2557,6 +3824,58 @@ private struct DetailsPane: View {
                 SettingsToggleRow(title: "Show time zone abbreviation", subtitle: "Display labels like EDT or BST.", isOn: $settings.showTimeZoneAbbreviation)
                 SettingsToggleRow(title: "Show GMT offset", subtitle: "Show numeric GMT offset badges.", isOn: $settings.showGMTOffset)
             }
+        }
+    }
+}
+
+private struct CalendarPane: View {
+    @ObservedObject var settings: ClockSettingsStore
+    @ObservedObject var calendarStore: CalendarStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsSection(title: "Next Meeting") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsToggleRow(
+                        title: "Show next meeting",
+                        subtitle: "Read your next calendar event and show it in the popover.",
+                        isOn: $settings.showCalendarEvents
+                    )
+
+                    Text(statusDescription)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    if case let .loaded(snapshot) = calendarStore.state, let snapshot {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(snapshot.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(snapshot.calendarName)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Text("Orpyt never creates or edits events. Permission is requested only after you turn this on.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var statusDescription: String {
+        switch calendarStore.state {
+        case .disabled:
+            return "Calendar context is off."
+        case .needsPermission:
+            return "Turn the feature off and on again if you want Orpyt to ask for access."
+        case .loading:
+            return "Looking for your next event."
+        case let .loaded(snapshot):
+            return snapshot == nil ? "No upcoming events found in the next 24 hours." : "The next meeting will appear in the popover."
+        case let .failed(message):
+            return message
         }
     }
 }
@@ -2587,20 +3906,30 @@ private struct AppearancePane: View {
     @ObservedObject var settings: ClockSettingsStore
 
     var body: some View {
-        SettingsSection(title: "Popover Appearance") {
-            Picker("Appearance", selection: Binding(
-                get: { settings.appearanceMode },
-                set: { settings.appearanceMode = $0 }
-            )) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsSection(title: "Popover Appearance") {
+                Picker("Appearance", selection: Binding(
+                    get: { settings.appearanceMode },
+                    set: { settings.appearanceMode = $0 }
+                )) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
+                .pickerStyle(.segmented)
 
-            Text("This changes the menu bar popover only. Settings always follow macOS.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                Text("This changes the menu bar popover only. Settings always follow macOS.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            SettingsSection(title: "Interaction") {
+                SettingsToggleRow(
+                    title: "Mute scroller tick",
+                    subtitle: "Turn off the native tick sound while scrubbing time.",
+                    isOn: $settings.muteScrollerSound
+                )
+            }
         }
     }
 }
@@ -2766,6 +4095,7 @@ private struct TimeZonePickerCard: View {
                 Button("Use Current Time Zone", action: useCurrentTimeZone)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .orpytClickableHover(scale: 1.02, brightness: 0.012)
             }
 
             HStack(alignment: .center, spacing: 12) {
@@ -2823,6 +4153,7 @@ private struct TimeZonePickerCard: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .orpytClickableHover(scale: 1.01, brightness: 0.012)
                     .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
                 }
             }
@@ -3206,7 +4537,11 @@ private enum ClockFormatter {
 
 private enum TimeZoneCatalog {
     static let defaultPrimaryID = TimeZone.current.identifier
-    static let defaultSecondaryID = "Europe/London"
+
+    static func defaultSecondaryID(relativeTo primaryID: String) -> String {
+        let candidates = ["Etc/UTC", "Europe/London", "America/New_York"]
+        return candidates.first(where: { $0 != primaryID && option(for: $0) != nil }) ?? "Europe/London"
+    }
 
     static let options: [TimeZoneOption] = {
         TimeZone.knownTimeZoneIdentifiers
