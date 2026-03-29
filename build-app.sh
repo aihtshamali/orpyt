@@ -28,6 +28,10 @@ if [[ -f "$ROOT_DIR/Assets/logo.png" ]]; then
   cp "$ROOT_DIR/Assets/logo.png" "$RESOURCES_DIR/logo.png"
 fi
 
+if [[ -f "$ROOT_DIR/Assets/Orpyt.icns" ]]; then
+  cp "$ROOT_DIR/Assets/Orpyt.icns" "$RESOURCES_DIR/Orpyt.icns"
+fi
+
 if [[ "${ORPYT_ENABLE_SIGNING:-0}" == "1" && -z "${ORPYT_SIGN_IDENTITY:-}" ]]; then
   ORPYT_SIGN_IDENTITY="$(
     security find-identity -v -p codesigning \

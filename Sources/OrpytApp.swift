@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let logoImage = AppAssetLoader.logoImage() {
             NSApp.applicationIconImage = logoImage
+            NSWorkspace.shared.setIcon(logoImage, forFile: Bundle.main.bundlePath, options: [])
         }
 
         let settings = ClockSettingsStore.shared
@@ -320,7 +321,7 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         self.settings = settings
         self.weatherStore = weatherStore
         hostingController = NSHostingController(rootView: AnyView(EmptyView()))
-        let window = NSWindow(contentViewController: hostingController)
+        let window = OrpytSettingsWindow(contentViewController: hostingController)
 
         window.title = "Orpyt Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -1761,12 +1762,23 @@ private struct SettingsPaneContainer<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(pane.rawValue)
-                    .font(.system(size: 28, weight: .semibold))
-                Text(pane.subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: pane.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                    )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(pane.rawValue)
+                        .font(.system(size: 28, weight: .semibold))
+                    Text(pane.subtitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 22)
@@ -2468,7 +2480,7 @@ private struct SettingsAppIconView: View {
 
 private enum AppAssetLoader {
     static func logoImage() -> NSImage? {
-        for fileName in ["logo.png", "orpyt-logo.png"] {
+        for fileName in ["logo.png", "orpyt-logo.png", "Orpyt.icns"] {
             if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
                let image = NSImage(contentsOf: url) {
                 return image
@@ -2627,11 +2639,35 @@ private struct SettingsSection<Content: View>: View {
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(nsColor: .controlBackgroundColor),
+                                Color.accentColor.opacity(0.04),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 0.8)
+            )
             .padding(.vertical, 4)
         } header: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
         }
+    }
+}
+
+private final class OrpytSettingsWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        close()
     }
 }
 

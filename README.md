@@ -57,7 +57,7 @@
 Clone the repo, then build and launch the local `.app` bundle:
 
 ```bash
-git clone <repo-url>
+git clone git@github.com:aihtshamali/orpyt.git
 cd Orpyt
 ./build-app.sh
 open .build/Orpyt.app
