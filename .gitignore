@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode build output
+build/
+DerivedData/
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+
+# Xcode per-user state
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+Orpyt.xcodeproj/xcuserdata/
+Orpyt.xcodeproj/project.xcworkspace/xcuserdata/
