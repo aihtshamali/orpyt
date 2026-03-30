@@ -711,6 +711,7 @@ public struct TimeScrollerStrip: View {
     public let palette: PopoverPalette
     public let isMuted: Bool
     @State private var isHovered = false
+    @State private var sliderFocused = false
 
     private var sliderValue: Binding<Double> {
         Binding(
@@ -748,14 +749,14 @@ public struct TimeScrollerStrip: View {
                 value: sliderValue,
                 range: -12...12,
                 step: 0.25,
-                isMuted: isMuted
+                isMuted: isMuted,
+                isFocused: sliderFocused
             )
             .frame(height: 18)
 
-            // Tick marks + labels aligned under the slider track
+            // Tick marks + labels — tappable to jump directly to that hour
             GeometryReader { geo in
                 let totalWidth = geo.size.width
-                // 25 positions: -12h, -9h, -6h, -3h, 0, +3h, +6h, +9h, +12h
                 let labeledHours: [(hour: Int, label: String)] = [
                     (-12, "-12h"), (-9, "-9h"), (-6, "-6h"), (-3, "-3h"),
                     (0, "Now"), (3, "+3h"), (6, "+6h"), (9, "+9h"), (12, "+12h")
@@ -774,12 +775,28 @@ public struct TimeScrollerStrip: View {
                             .fixedSize()
                     }
                     .position(x: xPos, y: 12)
+                    .contentShape(Rectangle().size(CGSize(width: 36, height: 28)).offset(x: xPos - 18, y: 0))
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            timeShiftMinutes = item.hour * 60
+                        }
+                    }
+                    .cursor(.pointingHand)
                 }
             }
             .frame(height: 24)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .background(
+            // Wheel capture behind all content so clicks pass through to buttons/labels
+            TimeScrollerWheelCapture(isMuted: isMuted) { step in
+                let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
+                let snapped = (newValue * 4).rounded() / 4
+                timeShiftMinutes = Int(snapped * 60)
+                sliderFocused = true
+            }
+        )
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(palette.cardFill)
@@ -788,19 +805,14 @@ public struct TimeScrollerStrip: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(isHovered ? palette.cardStroke.opacity(2.2) : palette.cardStroke, lineWidth: isHovered ? 1.2 : 0.8)
         )
-        // Capture scroll over the entire card, not just the slider bar
-        .overlay(
-            TimeScrollerWheelCapture { step in
-                let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
-                let snapped = (newValue * 4).rounded() / 4
-                timeShiftMinutes = Int(snapped * 60)
-            }
-        )
         .onHover { hovered in
             isHovered = hovered
-            if !hovered && timeShiftMinutes != 0 {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                    timeShiftMinutes = 0
+            if !hovered {
+                sliderFocused = false
+                if timeShiftMinutes != 0 {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                        timeShiftMinutes = 0
+                    }
                 }
             }
         }
@@ -823,21 +835,25 @@ public struct TimeScrollerStrip: View {
 /// Transparent NSView overlay that captures horizontal scrubbing while allowing
 /// normal vertical scrolling to continue through the popover content.
 public struct TimeScrollerWheelCapture: NSViewRepresentable {
+    public let isMuted: Bool
     public let onStep: (Int) -> Void
 
     public func makeNSView(context: Context) -> TimeScrollerWheelNSView {
         let view = TimeScrollerWheelNSView()
+        view.isMuted = isMuted
         view.onStep = onStep
         return view
     }
 
     public func updateNSView(_ nsView: TimeScrollerWheelNSView, context: Context) {
+        nsView.isMuted = isMuted
         nsView.onStep = onStep
     }
 }
 
 public final class TimeScrollerWheelNSView: NSView {
     public var onStep: (Int) -> Void = { _ in }
+    public var isMuted: Bool = false
     private var accumulatedDelta: CGFloat = 0
     private let scrollThreshold: CGFloat = 6
 
@@ -868,6 +884,8 @@ public final class TimeScrollerWheelNSView: NSView {
             let direction = accumulatedDelta > 0 ? -1 : 1
             accumulatedDelta += accumulatedDelta > 0 ? -scrollThreshold : scrollThreshold
             onStep(direction)
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            TickFeedbackPlayer.shared.play(isMuted: isMuted)
         }
     }
 }
@@ -877,6 +895,7 @@ public struct WheelScrubbingSlider: NSViewRepresentable {
     public let range: ClosedRange<Double>
     public let step: Double
     public let isMuted: Bool
+    public var isFocused: Bool = false
 
     public func makeCoordinator() -> Coordinator {
         Coordinator(value: $value)
@@ -898,6 +917,12 @@ public struct WheelScrubbingSlider: NSViewRepresentable {
         nsView.isMuted = isMuted
         if abs(nsView.doubleValue - value) > 0.001 {
             nsView.doubleValue = value
+        }
+        // Focus the slider when scrolling so the track turns blue
+        if isFocused && nsView.window?.firstResponder !== nsView {
+            nsView.window?.makeFirstResponder(nsView)
+        } else if !isFocused && nsView.window?.firstResponder === nsView {
+            nsView.window?.makeFirstResponder(nil)
         }
     }
 
@@ -966,5 +991,20 @@ public final class TickFeedbackPlayer {
             sound.stop()
         }
         sound.play()
+    }
+}
+
+private struct CursorModifier: ViewModifier {
+    let cursor: NSCursor
+    func body(content: Content) -> some View {
+        content.onHover { inside in
+            if inside { cursor.push() } else { NSCursor.pop() }
+        }
+    }
+}
+
+private extension View {
+    func cursor(_ cursor: NSCursor) -> some View {
+        modifier(CursorModifier(cursor: cursor))
     }
 }
