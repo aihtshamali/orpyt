@@ -31,8 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-
         if let appIconImage = AppAssetLoader.appIconImage() {
             NSApp.applicationIconImage = appIconImage
         }
@@ -54,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             calendarStore: calendarStore,
             settingsWindowController: settingsWindowController
         )
+
+        // Set accessory policy after status item is created so the menu bar button
+        // is fully allocated before the app hides its Dock icon (macOS 26 beta compat).
+        NSApp.setActivationPolicy(.accessory)
 
         if shouldOpenSettingsOnLaunch {
             DispatchQueue.main.async {
@@ -121,12 +123,18 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func configureStatusItem() {
-        guard let button = statusItem.button else { return }
-
-        button.target = self
-        button.action = #selector(togglePopover(_:))
-        button.sendAction(on: [.leftMouseUp])
-        button.toolTip = "Orpyt"
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(togglePopover(_:))
+            button.sendAction(on: [.leftMouseUp])
+            button.toolTip = "Orpyt"
+        } else {
+            // macOS 26 beta: button may be nil briefly; retry after run loop settles
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.configureStatusItem()
+                self?.updateDisplay()
+            }
+        }
     }
 
     private func configurePopover() {
