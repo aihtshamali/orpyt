@@ -12,5 +12,5 @@
   <choice id="orpyt.choice" title="Orpyt">
     <pkg-ref id="com.orpyt.clocks.pkg"/>
   </choice>
-  <pkg-ref id="com.orpyt.clocks.pkg" version="__VERSION__" onConclusion="none">Orpyt-component.pkg</pkg-ref>
+  <pkg-ref id="com.orpyt.clocks.pkg" version="__VERSION__">Orpyt-component.pkg</pkg-ref>
 </installer-gui-script>

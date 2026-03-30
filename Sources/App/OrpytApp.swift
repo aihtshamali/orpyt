@@ -35,7 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let appIconImage = AppAssetLoader.appIconImage() {
             NSApp.applicationIconImage = appIconImage
-            NSWorkspace.shared.setIcon(appIconImage, forFile: Bundle.main.bundlePath, options: [])
         }
 
         let settings = ClockSettingsStore.shared

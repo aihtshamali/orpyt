@@ -4,55 +4,112 @@
   <meta charset="utf-8">
   <title>Welcome to Orpyt</title>
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-      margin: 36px;
-      color: #1f2937;
-      background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
-    }
-    h1 {
-      font-size: 32px;
-      margin: 0 0 10px;
-    }
-    p {
-      font-size: 15px;
-      line-height: 1.55;
-      max-width: 620px;
-      margin: 0 0 14px;
+      padding: 36px 40px;
+      color: #1a1a2e;
+      background: linear-gradient(160deg, #f0f4ff 0%, #e8f0fe 60%, #dbeafe 100%);
+      min-height: 100vh;
     }
     .eyebrow {
-      display: inline-block;
-      padding: 6px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
       border-radius: 999px;
-      font-size: 11px;
-      letter-spacing: 0.08em;
+      font-size: 10.5px;
+      letter-spacing: 0.1em;
       font-weight: 700;
       text-transform: uppercase;
-      color: #1d4ed8;
-      background: rgba(37, 99, 235, 0.09);
-      margin-bottom: 18px;
+      color: #2563eb;
+      background: rgba(37, 99, 235, 0.1);
+      border: 1px solid rgba(37, 99, 235, 0.15);
+      margin-bottom: 24px;
+    }
+    .eyebrow::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #2563eb;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 16px;
-      margin-bottom: 18px;
+      gap: 18px;
+      margin-bottom: 28px;
     }
     .brand img {
-      width: 72px;
-      height: 72px;
-      border-radius: 18px;
-      box-shadow: 0 10px 30px rgba(37, 99, 235, 0.18);
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.22), 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .brand-name {
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #111827;
+    }
+    .tagline {
+      font-size: 17px;
+      font-weight: 500;
+      color: #374151;
+      line-height: 1.5;
+      margin-bottom: 20px;
+      max-width: 500px;
+    }
+    .features {
+      list-style: none;
+      margin-bottom: 24px;
+    }
+    .features li {
+      font-size: 14px;
+      color: #4b5563;
+      line-height: 1.6;
+      padding: 5px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .features li::before {
+      content: '';
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(37, 99, 235, 0.12);
+      border: 1.5px solid rgba(37, 99, 235, 0.25);
+      flex-shrink: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='%232563eb' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .note {
+      font-size: 13px;
+      color: #6b7280;
+      line-height: 1.5;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.06);
+      max-width: 500px;
     }
   </style>
 </head>
 <body>
-  <div class="eyebrow">Orpyt Installer</div>
+  <div class="eyebrow">Free &amp; Open Source</div>
   <div class="brand">
     <img src="logo.png" alt="Orpyt" />
+    <span class="brand-name">Orpyt</span>
   </div>
-  <h1>Install Orpyt</h1>
-  <p>Orpyt is a native macOS menu bar clock built for people who work across time zones.</p>
-  <p>This installer places <strong>Orpyt.app</strong> in your <strong>Applications</strong> folder so it behaves like a normal Mac app from first launch.</p>
+  <p class="tagline">The menu bar clock built for people who work across the world.</p>
+  <ul class="features">
+    <li>Multiple time zones, always visible in your menu bar</li>
+    <li>Live weather for every city you track</li>
+    <li>Upcoming calendar events at a glance</li>
+    <li>Lightweight — no Dock icon, no background drain</li>
+  </ul>
+  <p class="note">This installer will place <strong>Orpyt.app</strong> in your <strong>Applications</strong> folder. No admin password required for personal installs.</p>
 </body>
 </html>

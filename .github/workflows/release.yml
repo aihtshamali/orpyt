@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Import certificates
+        env:
+          P12_BASE64: ${{ secrets.CERTIFICATES_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$P12_BASE64" | base64 --decode -o $RUNNER_TEMP/certs.p12
+          security import $RUNNER_TEMP/certs.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$P12_PASSWORD" \
+            -A -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/pkgbuild
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+      - name: Store notarization credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "orpyt-ci" \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD"
+
+      - name: Build, sign, notarize
+        run: |
+          ORPYT_NOTARY_PROFILE="orpyt-ci" ./release.sh
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Orpyt v${{ steps.version.outputs.version }}
+          files: |
+            dist/release/Orpyt.dmg
+            dist/release/Orpyt.pkg
+            dist/release/Orpyt.zip
+          body: |
+            ## Install
+
+            **Recommended:** Download **Orpyt.dmg**, open it, drag to Applications.
+
+            Also available as **Orpyt.pkg** (double-click installer) or **Orpyt.zip** (manual drag).
+
+            ## Requirements
+            - macOS 13.0 Ventura or later
