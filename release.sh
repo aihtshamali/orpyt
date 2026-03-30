@@ -64,6 +64,9 @@ XCODEBUILD_ARGS=(
   -archivePath "$ARCHIVE_PATH"
   "OTHER_CODE_SIGN_FLAGS=--timestamp"
   ENABLE_HARDENED_RUNTIME=YES
+  CODE_SIGN_STYLE=Automatic
+  "CODE_SIGN_IDENTITY=Developer ID Application"
+  CODE_SIGNING_REQUIRED=YES
   archive
 )
 
