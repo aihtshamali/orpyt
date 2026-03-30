@@ -98,6 +98,7 @@ if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
     --sign "$APP_SIGN_IDENTITY" \
     --timestamp \
     --options runtime \
+    --entitlements "$ROOT_DIR/Orpyt.entitlements" \
     "$DIST_APP_PATH"
 fi
 
