@@ -312,7 +312,7 @@ public final class CalendarStore: ObservableObject {
 
     @Published private(set) var state: CalendarState = .disabled
 
-    private let eventStore = EKEventStore()
+    private var eventStore = EKEventStore()
     private var refreshTask: Task<Void, Never>?
 
     public func prepareForLaunch(using settings: ClockSettingsStore) {
@@ -332,6 +332,8 @@ public final class CalendarStore: ObservableObject {
     }
 
     public func enable(using settings: ClockSettingsStore) async {
+        // Reset the store so it picks up any authorization changes made in System Settings.
+        eventStore = EKEventStore()
         let authorization = authorizationStatus
 
         if isAuthorized(authorization) {
@@ -355,6 +357,7 @@ public final class CalendarStore: ObservableObject {
             }
 
             if granted {
+                eventStore = EKEventStore()
                 await refresh(using: settings)
             } else {
                 state = .failed("Calendar access is off")

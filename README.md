@@ -22,15 +22,14 @@
 
 **Requirements:** macOS 13 Ventura or later.
 
-1. Go to [**Releases**](https://github.com/aihtshamali/orpyt/releases) and download the latest `Orpyt.dmg`.
-2. Open the `.dmg` — a window appears with the Orpyt icon and an Applications folder shortcut.
-3. Drag **Orpyt.app** into **Applications**.
-4. Eject the disk image.
-5. Open **Applications → Orpyt**.
-6. macOS will ask for confirmation the first time — click **Open**.
-7. The Orpyt clock appears in your menu bar immediately.
+1. Go to [**Releases**](https://github.com/aihtshamali/orpyt/releases) and download the latest `Orpyt.pkg`.
+2. Open the package in macOS Installer.
+3. Follow the standard install steps. Orpyt is installed directly into **Applications**.
+4. Open **Applications → Orpyt**.
+5. macOS will ask for confirmation the first time — click **Open**.
+6. The Orpyt clock appears in your menu bar immediately.
 
-> Orpyt is notarized and signed with a Developer ID certificate. macOS Gatekeeper will clear it without any security warnings.
+> Orpyt is intended to ship as a signed and notarized native macOS installer package.
 
 To enable **Launch at Login**, open Orpyt → click the settings icon → General → toggle Launch at Login.
 
@@ -123,7 +122,7 @@ After building, you can drag `dist/Orpyt.app` into `Applications` and run it lik
 
 ## Release for Users
 
-For public distribution on macOS, build a signed release from Xcode and package it as a DMG:
+For public distribution on macOS, build a signed release from Xcode and package it as a native macOS installer:
 
 ```bash
 cd Orpyt
@@ -133,14 +132,16 @@ cd Orpyt
 Release artifacts are written to:
 
 - `dist/release/Orpyt.app`
+- `dist/release/Orpyt.pkg`
 - `dist/release/Orpyt.zip`
-- `dist/release/Orpyt.dmg`
+- `dist/release/Orpyt.dmg` (optional)
 
 ### Recommended Distribution Path
 
 - Sign with `Developer ID Application`
+- Sign the installer with `Developer ID Installer`
 - Notarize with Apple
-- Share the generated `dist/release/Orpyt.dmg`
+- Share the generated `dist/release/Orpyt.pkg`
 
 ### Local Smoke Test Without Signing
 
@@ -149,6 +150,13 @@ If you only want to verify the release pipeline locally:
 ```bash
 cd Orpyt
 ORPYT_ALLOW_UNSIGNED=1 ./release.sh
+```
+
+If you want to skip DMG creation and only produce the native installer package:
+
+```bash
+cd Orpyt
+ORPYT_SKIP_DMG=1 ./release.sh
 ```
 
 ### Notarization
@@ -168,11 +176,11 @@ ORPYT_NOTARY_PASSWORD="app-specific-password" \
 ./release.sh
 ```
 
-If notarization credentials are not provided, Orpyt still produces the release `.app`, `.zip`, and `.dmg`, but skips notarization.
+If notarization credentials are not provided, Orpyt still produces the release `.app`, `.pkg`, `.zip`, and `.dmg`, but skips notarization.
 
 ### App Store vs Direct Download
 
-For direct user installs, use the DMG flow above.
+For direct user installs, use the PKG flow above.
 
 If you plan to ship through the Mac App Store, use Xcode archive validation and App Store Connect instead of DMG notarization.
 
