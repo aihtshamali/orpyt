@@ -788,7 +788,22 @@ public struct TimeScrollerStrip: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(isHovered ? palette.cardStroke.opacity(2.2) : palette.cardStroke, lineWidth: isHovered ? 1.2 : 0.8)
         )
-        .onHover { isHovered = $0 }
+        // Capture scroll over the entire card, not just the slider bar
+        .overlay(
+            TimeScrollerWheelCapture { step in
+                let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
+                let snapped = (newValue * 4).rounded() / 4
+                timeShiftMinutes = Int(snapped * 60)
+            }
+        )
+        .onHover { hovered in
+            isHovered = hovered
+            if !hovered && timeShiftMinutes != 0 {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                    timeShiftMinutes = 0
+                }
+            }
+        }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
     }
 
