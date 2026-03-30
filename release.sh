@@ -62,20 +62,12 @@ XCODEBUILD_ARGS=(
   -destination "generic/platform=macOS"
   -derivedDataPath "$DERIVED_DATA_PATH"
   -archivePath "$ARCHIVE_PATH"
-  "OTHER_CODE_SIGN_FLAGS=--timestamp"
   ENABLE_HARDENED_RUNTIME=YES
-  CODE_SIGN_STYLE=Automatic
-  "CODE_SIGN_IDENTITY=Developer ID Application"
-  CODE_SIGNING_REQUIRED=YES
+  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_REQUIRED=NO
+  CODE_SIGN_IDENTITY=""
   archive
 )
-
-if [[ "$ALLOW_UNSIGNED" == "1" ]]; then
-  XCODEBUILD_ARGS+=(
-    CODE_SIGNING_ALLOWED=NO
-    CODE_SIGNING_REQUIRED=NO
-  )
-fi
 
 xcodebuild "${XCODEBUILD_ARGS[@]}"
 
