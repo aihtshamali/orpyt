@@ -1,36 +1,22 @@
-Copyright (c) 2026 Aihtsham Ali. All rights reserved.
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
 
-SOURCE AVAILABLE LICENSE
+Copyright (C) 2026 Aihtsham Ali
 
-This software and its source code ("Software") are made available for
-viewing and non-commercial personal use only. By accessing or using the
-Software, you agree to the following terms:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-1. PERMITTED USE
-   You may view, download, and run the Software for personal,
-   non-commercial purposes only.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
 
-2. RESTRICTIONS
-   You may NOT, without prior written permission from the copyright holder:
-   - Redistribute, sublicense, or publish the Software or any derivative work
-   - Use the Software or any part of it in a commercial product or service
-   - Fork this repository and distribute modified versions
-   - Remove or alter any copyright notices or this license
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-3. CONTRIBUTIONS
-   By submitting a pull request or contribution, you grant the copyright
-   holder a perpetual, irrevocable, royalty-free license to use your
-   contribution in any form, including in future proprietary versions.
+---
 
-4. FUTURE LICENSING
-   The copyright holder reserves the right to change the license of this
-   Software at any time, including releasing it under a commercial or
-   closed-source license.
-
-5. NO WARRANTY
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-   THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING
-   FROM THE USE OF THIS SOFTWARE.
-
-For permissions beyond the scope of this license, contact:
-aihtshamali@gmail.com
+The full text of the GNU General Public License v3 is available at:
+https://www.gnu.org/licenses/gpl-3.0.txt

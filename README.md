@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/aihtshamali/orpyt/releases/latest"><img src="https://img.shields.io/github/v/release/aihtshamali/orpyt?display_name=tag&label=release&color=brightgreen" alt="Latest Release"></a>
   <a href="https://github.com/aihtshamali/orpyt/releases/latest"><img src="https://img.shields.io/badge/platform-macOS%2013%2B-111111" alt="Platform"></a>
-  <a href="https://github.com/aihtshamali/orpyt/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Source%20Available-blue" alt="License"></a>
+  <a href="https://github.com/aihtshamali/orpyt/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
   <a href="https://github.com/aihtshamali/orpyt/commits/main"><img src="https://img.shields.io/badge/status-actively%20maintained-2ea043" alt="Status"></a>
 </p>
 
