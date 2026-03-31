@@ -307,15 +307,25 @@ if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
   if [[ -f "$GENERATED_APPCAST" ]]; then
     # Push updated appcast to gh-pages branch
     GH_PAGES_DIR=$(mktemp -d)
-    git clone --branch gh-pages --depth 1 \
-      "$(git -C "$ROOT_DIR" remote get-url origin)" "$GH_PAGES_DIR" 2>/dev/null
+
+    # Build an authenticated remote URL: prefer GITHUB_TOKEN for CI, fall back to SSH
+    ORIGIN_URL="$(git -C "$ROOT_DIR" remote get-url origin)"
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+      # Convert any git@github.com:owner/repo.git → https://x-access-token:TOKEN@github.com/owner/repo.git
+      HTTPS_URL="${ORIGIN_URL/git@github.com:/https://github.com/}"
+      AUTHED_URL="${HTTPS_URL/https:\/\/github.com/https://x-access-token:${GITHUB_TOKEN}@github.com}"
+    else
+      AUTHED_URL="$ORIGIN_URL"
+    fi
+
+    git clone --branch gh-pages --depth 1 "$AUTHED_URL" "$GH_PAGES_DIR" 2>/dev/null
 
     cp "$GENERATED_APPCAST" "$GH_PAGES_DIR/appcast.xml"
     git -C "$GH_PAGES_DIR" add appcast.xml
     git -C "$GH_PAGES_DIR" -c user.name="Orpyt Release Bot" \
       -c user.email="release@orpyt.app" \
       commit -m "appcast: update for $RELEASE_TAG"
-    git -C "$GH_PAGES_DIR" push origin gh-pages
+    git -C "$GH_PAGES_DIR" push "$AUTHED_URL" gh-pages
     rm -rf "$GH_PAGES_DIR"
     echo "Appcast updated and pushed to gh-pages."
   else
