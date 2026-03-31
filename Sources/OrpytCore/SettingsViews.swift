@@ -24,21 +24,13 @@ public struct SettingsView: View {
     public var body: some View {
         NavigationSplitView {
             List(SettingsPane.allCases, selection: $selectedPane) { pane in
-                SettingsSidebarRow(pane: pane)
+                Label(pane.rawValue, systemImage: pane.icon)
                     .tag(pane)
             }
-            .navigationSplitViewColumnWidth(min: 215, ideal: 235)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .listStyle(.sidebar)
         } detail: {
-            if selectedPane == .overview {
-                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
-            } else if let selectedPane {
-                SettingsPaneContainer(pane: selectedPane) {
-                    detailView(for: selectedPane)
-                }
-            } else {
-                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
-            }
+            detailView(for: selectedPane ?? .overview)
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -48,22 +40,29 @@ public struct SettingsView: View {
         switch pane {
         case .overview:
             SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
+                .navigationTitle("Overview")
         case .timeZones:
             TimeZonesPane(
                 settings: settings,
                 primarySearchText: $primarySearchText,
                 secondarySearchText: $secondarySearchText
             )
+            .navigationTitle("Time Zones")
         case .menuBar:
             MenuBarPane(settings: settings)
+                .navigationTitle("Menu Bar")
         case .details:
             DetailsPane(settings: settings)
+                .navigationTitle("Clock Details")
         case .calendar:
             CalendarPane(settings: settings, calendarStore: calendarStore)
+                .navigationTitle("Calendar")
         case .weather:
             WeatherPane(settings: settings)
+                .navigationTitle("Weather")
         case .appearance:
             AppearancePane(settings: settings)
+                .navigationTitle("Appearance")
         }
     }
 }
@@ -104,60 +103,6 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
-public struct SettingsSidebarRow: View {
-    public let pane: SettingsPane
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Label(pane.rawValue, systemImage: pane.icon)
-                .font(.system(size: 13, weight: .semibold))
-            Text(pane.subtitle)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 25)
-        }
-        .padding(.vertical, 3)
-        .orpytClickableHover(scale: 1.01, brightness: 0.01)
-    }
-}
-
-public struct SettingsPaneContainer<Content: View>: View {
-    public let pane: SettingsPane
-    @ViewBuilder let content: Content
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: pane.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.10))
-                    )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(pane.rawValue)
-                        .font(.system(size: 28, weight: .semibold))
-                    Text(pane.subtitle)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 22)
-
-            Form {
-                content
-            }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .padding(.horizontal, 8)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-}
 
 public struct SettingsOverviewPane: View {
     @ObservedObject public var settings: ClockSettingsStore
@@ -1012,16 +957,16 @@ public struct TimeZonesPane: View {
     @State private var selectedSlot: ClockSlot = .primary
 
     public var body: some View {
-        Group {
-            SettingsSection(title: "Clock") {
-                Picker("Clock", selection: $selectedSlot) {
+        Form {
+            Section("Clock") {
+                Picker("Edit clock", selection: $selectedSlot) {
                     Text("Primary").tag(ClockSlot.primary)
                     Text("Secondary").tag(ClockSlot.secondary)
                 }
                 .pickerStyle(.segmented)
             }
 
-            SettingsSection(title: "Location") {
+            Section("Location") {
                 TimeZonePickerCard(
                     title: selectedSlot == .primary ? "Primary Clock" : "Secondary Clock",
                     customLabel: selectedSlot == .primary ? $settings.primaryCustomLabel : $settings.secondaryCustomLabel,
@@ -1030,16 +975,13 @@ public struct TimeZonesPane: View {
                 )
             }
 
-            SettingsSection(title: "Actions") {
-                HStack {
-                    Spacer()
-                    Button("Swap Primary and Secondary") {
-                        settings.swapTimeZones()
-                    }
-                    .buttonStyle(.bordered)
+            Section {
+                Button("Swap Primary and Secondary") {
+                    settings.swapTimeZones()
                 }
             }
         }
+        .formStyle(.grouped)
     }
 }
 
@@ -1048,40 +990,49 @@ public struct MenuBarPane: View {
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsSection(title: "Startup") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsToggleRow(
-                        title: "Launch at login",
-                        subtitle: launchAtLogin.statusMessage,
-                        isOn: Binding(
-                            get: { launchAtLogin.isEnabled },
-                            set: { launchAtLogin.setEnabled($0) }
-                        )
-                    )
-
-                    if let errorMessage = launchAtLogin.errorMessage {
-                        Text(errorMessage)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+        Form {
+            Section("Startup") {
+                Toggle(isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.setEnabled($0) })) {
+                    Text("Launch at Login")
+                    Text(launchAtLogin.statusMessage)
+                }
+                if let errorMessage = launchAtLogin.errorMessage {
+                    Text(errorMessage).foregroundStyle(.secondary)
                 }
             }
 
-            SettingsSection(title: "Displayed in Menu Bar") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsToggleRow(title: "Show primary clock", subtitle: "Keep the first city visible in the menu bar.", isOn: $settings.showPrimaryClock)
-                    SettingsToggleRow(title: "Show secondary clock", subtitle: "Keep the second city visible in the menu bar.", isOn: $settings.showSecondaryClock)
-                    SettingsToggleRow(title: "Show zone labels", subtitle: "Display short city labels beside the time.", isOn: $settings.showZoneLabelInMenuBar)
-                    SettingsToggleRow(title: "Show ambient icon", subtitle: "Use day or night iconography in the menu bar.", isOn: $settings.showStatusIcon)
-                    SettingsToggleRow(title: "Use 24-hour time", subtitle: "Switch between 12-hour and 24-hour formats.", isOn: $settings.use24HourClock)
-                    SettingsToggleRow(title: "Show seconds", subtitle: "Update the top bar every second.", isOn: $settings.showSeconds)
+            Section("Clocks") {
+                Toggle(isOn: $settings.showPrimaryClock) {
+                    Text("Show primary clock")
+                    Text("Keep the first city visible in the menu bar.")
+                }
+                Toggle(isOn: $settings.showSecondaryClock) {
+                    Text("Show secondary clock")
+                    Text("Keep the second city visible in the menu bar.")
+                }
+            }
+
+            Section("Display") {
+                Toggle(isOn: $settings.showZoneLabelInMenuBar) {
+                    Text("Show zone labels")
+                    Text("Display short city labels beside the time.")
+                }
+                Toggle(isOn: $settings.showStatusIcon) {
+                    Text("Show ambient icon")
+                    Text("Use day or night iconography in the menu bar.")
+                }
+                Toggle(isOn: $settings.use24HourClock) {
+                    Text("Use 24-hour time")
+                    Text("Switch between 12-hour and 24-hour formats.")
+                }
+                Toggle(isOn: $settings.showSeconds) {
+                    Text("Show seconds")
+                    Text("Update the top bar every second.")
                 }
             }
         }
-        .onAppear {
-            launchAtLogin.refresh()
-        }
+        .formStyle(.grouped)
+        .onAppear { launchAtLogin.refresh() }
     }
 }
 
@@ -1089,14 +1040,27 @@ public struct DetailsPane: View {
     @ObservedObject public var settings: ClockSettingsStore
 
     public var body: some View {
-        SettingsSection(title: "Metadata") {
-            VStack(alignment: .leading, spacing: 12) {
-                SettingsToggleRow(title: "Show weekday", subtitle: "Include weekday in the detailed card.", isOn: $settings.showWeekday)
-                SettingsToggleRow(title: "Show date", subtitle: "Include day and month in the detail view.", isOn: $settings.showDate)
-                SettingsToggleRow(title: "Show time zone abbreviation", subtitle: "Display labels like EDT or BST.", isOn: $settings.showTimeZoneAbbreviation)
-                SettingsToggleRow(title: "Show GMT offset", subtitle: "Show numeric GMT offset badges.", isOn: $settings.showGMTOffset)
+        Form {
+            Section("Metadata") {
+                Toggle(isOn: $settings.showWeekday) {
+                    Text("Show weekday")
+                    Text("Include weekday in the detailed card.")
+                }
+                Toggle(isOn: $settings.showDate) {
+                    Text("Show date")
+                    Text("Include day and month in the detail view.")
+                }
+                Toggle(isOn: $settings.showTimeZoneAbbreviation) {
+                    Text("Show time zone abbreviation")
+                    Text("Display labels like EDT or BST.")
+                }
+                Toggle(isOn: $settings.showGMTOffset) {
+                    Text("Show GMT offset")
+                    Text("Show numeric GMT offset badges.")
+                }
             }
         }
+        .formStyle(.grouped)
     }
 }
 
@@ -1105,49 +1069,38 @@ public struct CalendarPane: View {
     @ObservedObject public var calendarStore: CalendarStore
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsSection(title: "Next Meeting") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsToggleRow(
-                        title: "Show next meeting",
-                        subtitle: "Read your next calendar event and show it in the popover.",
-                        isOn: $settings.showCalendarEvents
-                    )
-
-                    Text(statusDescription)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                    if case let .loaded(snapshot) = calendarStore.state, let snapshot {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(snapshot.title)
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(snapshot.calendarName)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+        Form {
+            Section("Next Meeting") {
+                Toggle(isOn: $settings.showCalendarEvents) {
+                    Text("Show next meeting")
+                    Text("Read your next calendar event and show it in the popover.")
+                }
+                if case let .loaded(snapshot) = calendarStore.state, let snapshot {
+                    LabeledContent("Next event") {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(snapshot.title).fontWeight(.medium)
+                            Text(snapshot.calendarName).foregroundStyle(.secondary)
                         }
                     }
-
-                    Text("Orpyt never creates or edits events. Permission is requested only after you turn this on.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
                 }
+                Text(statusDescription)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Text("Orpyt never creates or edits events. Permission is requested only after you turn this on.")
+                    .foregroundStyle(.secondary)
             }
         }
+        .formStyle(.grouped)
     }
 
     private var statusDescription: String {
         switch calendarStore.state {
-        case .disabled:
-            return "Calendar context is off."
-        case .needsPermission:
-            return "Turn the feature off and on again if you want Orpyt to ask for access."
-        case .loading:
-            return "Looking for your next event."
-        case let .loaded(snapshot):
-            return snapshot == nil ? "No upcoming events found in the next 24 hours." : "The next meeting will appear in the popover."
-        case let .failed(message):
-            return message
+        case .disabled: return "Calendar context is off."
+        case .needsPermission: return "Turn the toggle off and back on to request access."
+        case .loading: return "Looking for your next event."
+        case let .loaded(snapshot): return snapshot == nil ? "No upcoming events in the next 24 hours." : "Next meeting will appear in the popover."
+        case let .failed(message): return message
         }
     }
 }
@@ -1156,21 +1109,38 @@ public struct WeatherPane: View {
     @ObservedObject public var settings: ClockSettingsStore
 
     public var body: some View {
-        SettingsSection(title: "Weather") {
-            VStack(alignment: .leading, spacing: 14) {
-                SettingsToggleRow(title: "Enable live weather", subtitle: "Attach live weather to each clock.", isOn: $settings.enableWeather)
-                SettingsToggleRow(title: "Use weather icons", subtitle: "Switch the menu bar icon mode from ambient to weather.", isOn: $settings.showWeatherInMenuBar)
-                    .opacity(settings.enableWeather ? 1 : 0.55)
-                SettingsToggleRow(title: "Show location in cards", subtitle: "Display the resolved city below the condition.", isOn: $settings.showWeatherLocation)
-                    .opacity(settings.enableWeather ? 1 : 0.55)
-                SettingsToggleRow(title: "Show feels like temperature", subtitle: "Include apparent temperature in the card details.", isOn: $settings.showFeelsLikeTemperature)
-                    .opacity(settings.enableWeather ? 1 : 0.55)
+        Form {
+            Section {
+                Toggle(isOn: $settings.enableWeather) {
+                    Text("Enable live weather")
+                    Text("Attach live weather to each clock.")
+                }
+            }
 
+            Section("Display") {
+                Toggle(isOn: $settings.showWeatherInMenuBar) {
+                    Text("Use weather icons")
+                    Text("Switch the menu bar icon mode from ambient to weather.")
+                }
+                .disabled(!settings.enableWeather)
+                Toggle(isOn: $settings.showWeatherLocation) {
+                    Text("Show location in cards")
+                    Text("Display the resolved city below the condition.")
+                }
+                .disabled(!settings.enableWeather)
+                Toggle(isOn: $settings.showFeelsLikeTemperature) {
+                    Text("Show feels like temperature")
+                    Text("Include apparent temperature in the card details.")
+                }
+                .disabled(!settings.enableWeather)
+            }
+
+            Section {
                 Text("Weather follows each selected clock city automatically.")
-                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
         }
+        .formStyle(.grouped)
     }
 }
 
@@ -1178,8 +1148,8 @@ public struct AppearancePane: View {
     @ObservedObject public var settings: ClockSettingsStore
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingsSection(title: "Popover Appearance") {
+        Form {
+            Section("Popover") {
                 Picker("Appearance", selection: Binding(
                     get: { settings.appearanceMode },
                     set: { settings.appearanceMode = $0 }
@@ -1188,83 +1158,21 @@ public struct AppearancePane: View {
                         Text(mode.title).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
-
                 Text("This changes the menu bar popover only. Settings always follow macOS.")
-                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
-            SettingsSection(title: "Interaction") {
-                SettingsToggleRow(
-                    title: "Mute scroller tick",
-                    subtitle: "Turn off the native tick sound while scrubbing time.",
-                    isOn: $settings.muteScrollerSound
-                )
+            Section("Interaction") {
+                Toggle(isOn: $settings.muteScrollerSound) {
+                    Text("Mute scroller tick")
+                    Text("Turn off the native tick sound while scrubbing time.")
+                }
             }
         }
+        .formStyle(.grouped)
     }
 }
 
-public struct SettingsToggleRow: View {
-    public let title: String
-    public let subtitle: String
-    @Binding public var isOn: Bool
-
-    public var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 16)
-
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .controlSize(.regular)
-        }
-    }
-}
-
-public struct SettingsSection<Content: View>: View {
-    public let title: String
-    @ViewBuilder let content: Content
-
-    public var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 14) {
-                content
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(nsColor: .controlBackgroundColor),
-                                Color.accentColor.opacity(0.04),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 0.8)
-            )
-            .padding(.vertical, 4)
-        } header: {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-        }
-    }
-}
 
 public final class OrpytSettingsWindow: NSWindow {
     override public func cancelOperation(_ sender: Any?) {

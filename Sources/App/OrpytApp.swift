@@ -201,6 +201,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.refreshPopoverContent()
+                self?.settingsWindowController.refreshAppearance()
             }
             .store(in: &cancellables)
     }
@@ -476,9 +477,7 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         super.init(window: window)
         shouldCascadeWindows = false
         window.delegate = self
-        hostingController.rootView = AnyView(
-            SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
-        )
+        refreshSettingsView()
         refreshAppearance()
     }
 
@@ -507,7 +506,25 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     }
 
     func refreshAppearance() {
-        window?.appearance = nil
+        switch settings.appearanceMode {
+        case .system:
+            window?.appearance = nil
+        case .light:
+            window?.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            window?.appearance = NSAppearance(named: .darkAqua)
+        }
+        refreshSettingsView()
+    }
+
+    private func refreshSettingsView() {
+        let view = SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
+        switch settings.appearanceMode {
+        case .system:
+            hostingController.rootView = AnyView(view)
+        case .light, .dark:
+            hostingController.rootView = AnyView(view.preferredColorScheme(settings.preferredColorScheme))
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

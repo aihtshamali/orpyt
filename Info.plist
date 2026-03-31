@@ -11,7 +11,9 @@
   <key>CFBundleIdentifier</key>
   <string>com.orpyt.clocks</string>
   <key>CFBundleIconFile</key>
-  <string>appstore.png</string>
+  <string>Orpyt</string>
+  <key>CFBundleIconName</key>
+  <string>Orpyt</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
