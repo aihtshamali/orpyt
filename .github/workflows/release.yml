@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +56,13 @@ jobs:
             --team-id "$NOTARY_TEAM_ID" \
             --password "$NOTARY_PASSWORD"
 
-      - name: Build, sign, notarize
+      - name: Build, sign, notarize, generate appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          ORPYT_RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          git config --global user.name "Orpyt Release Bot"
+          git config --global user.email "release@orpyt.app"
           ORPYT_NOTARY_PROFILE="orpyt-ci" ./release.sh
 
       - name: Get version

@@ -264,6 +264,67 @@ else
   echo "Skipping notarization. Set ORPYT_NOTARY_PROFILE or Apple ID/team/password env vars to notarize."
 fi
 
+# ── Sparkle appcast ──────────────────────────────────────────────────────────
+# Requires SPARKLE_PRIVATE_KEY env var (base64 Ed25519 key from generate_keys -x).
+# Downloads generate_appcast if not already cached in build root.
+
+SPARKLE_TOOLS_DIR="${ORPYT_SPARKLE_TOOLS:-$BUILD_ROOT/sparkle-tools}"
+GENERATE_APPCAST="$SPARKLE_TOOLS_DIR/bin/generate_appcast"
+APPCAST_UPDATES_DIR="$BUILD_ROOT/appcast-updates"
+
+if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+  # Download Sparkle tools if needed
+  if [[ ! -x "$GENERATE_APPCAST" ]]; then
+    echo "Downloading Sparkle tools..."
+    mkdir -p "$SPARKLE_TOOLS_DIR"
+    curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/2.9.1/Sparkle-for-Swift-Package-Manager.zip" \
+      -o "$SPARKLE_TOOLS_DIR/sparkle.zip"
+    unzip -q -o "$SPARKLE_TOOLS_DIR/sparkle.zip" -d "$SPARKLE_TOOLS_DIR"
+    rm "$SPARKLE_TOOLS_DIR/sparkle.zip"
+  fi
+
+  # Write private key to temp file for generate_appcast
+  PRIVATE_KEY_FILE=$(mktemp)
+  echo -n "$SPARKLE_PRIVATE_KEY" > "$PRIVATE_KEY_FILE"
+  trap "rm -f '$PRIVATE_KEY_FILE'" EXIT
+
+  # Collect all release artifacts into one dir and generate the appcast
+  mkdir -p "$APPCAST_UPDATES_DIR"
+  [[ "$SKIP_DMG" != "1" && -f "$DMG_PATH" ]] && cp "$DMG_PATH" "$APPCAST_UPDATES_DIR/"
+  [[ -f "$PKG_PATH" ]] && cp "$PKG_PATH" "$APPCAST_UPDATES_DIR/"
+
+  RELEASE_TAG="${ORPYT_RELEASE_TAG:-v$MARKETING_VERSION}"
+  BASE_URL="https://github.com/aihtshamali/orpyt/releases/download/$RELEASE_TAG"
+
+  "$GENERATE_APPCAST" \
+    --ed-key-file "$PRIVATE_KEY_FILE" \
+    --download-url-prefix "$BASE_URL/" \
+    --link "https://github.com/aihtshamali/orpyt" \
+    "$APPCAST_UPDATES_DIR"
+
+  GENERATED_APPCAST="$APPCAST_UPDATES_DIR/appcast.xml"
+
+  if [[ -f "$GENERATED_APPCAST" ]]; then
+    # Push updated appcast to gh-pages branch
+    GH_PAGES_DIR=$(mktemp -d)
+    git clone --branch gh-pages --depth 1 \
+      "$(git -C "$ROOT_DIR" remote get-url origin)" "$GH_PAGES_DIR" 2>/dev/null
+
+    cp "$GENERATED_APPCAST" "$GH_PAGES_DIR/appcast.xml"
+    git -C "$GH_PAGES_DIR" add appcast.xml
+    git -C "$GH_PAGES_DIR" -c user.name="Orpyt Release Bot" \
+      -c user.email="release@orpyt.app" \
+      commit -m "appcast: update for $RELEASE_TAG"
+    git -C "$GH_PAGES_DIR" push origin gh-pages
+    rm -rf "$GH_PAGES_DIR"
+    echo "Appcast updated and pushed to gh-pages."
+  else
+    echo "Warning: generate_appcast did not produce appcast.xml"
+  fi
+else
+  echo "Skipping appcast generation. Set SPARKLE_PRIVATE_KEY to enable."
+fi
+
 echo ""
 echo "Archive:  $ARCHIVE_PATH"
 echo "App:      $DIST_APP_PATH"

@@ -4,6 +4,7 @@ import CoreLocation
 import EventKit
 import Security
 import ServiceManagement
+import Sparkle
 import SwiftUI
 import WeatherKit
 
@@ -25,6 +26,15 @@ struct OrpytApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusBarController?
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
+
+    func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
+    }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         statusController?.reCheckCalendarIfNeeded()
