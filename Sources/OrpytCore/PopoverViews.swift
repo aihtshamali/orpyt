@@ -827,11 +827,6 @@ public struct TimeScrollerStrip: View {
             isHovered = hovered
             if !hovered {
                 focusProxy.blur()
-                if timeShiftMinutes != 0 {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                        timeShiftMinutes = 0
-                    }
-                }
             }
         }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
