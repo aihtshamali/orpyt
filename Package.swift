@@ -12,6 +12,9 @@ let package = Package(
             targets: ["OrpytApp"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
+    ],
     targets: [
         // Core library — all stores, views, formatters, models.
         // Internal types are accessible to both the app and the test target.
@@ -22,7 +25,10 @@ let package = Package(
         // Executable — only the @main entry point, AppDelegate, and controllers.
         .executableTarget(
             name: "OrpytApp",
-            dependencies: ["OrpytCore"],
+            dependencies: [
+                "OrpytCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/App"
         ),
         // Unit tests — can @testable import OrpytCore.

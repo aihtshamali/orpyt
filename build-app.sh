@@ -12,15 +12,13 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
-mkdir -p "$BUILD_DIR/home" "$BUILD_DIR/clang-cache" "$BUILD_DIR/swiftpm-cache"
+swift build
 
-env \
-  HOME="$BUILD_DIR/home" \
-  CLANG_MODULE_CACHE_PATH="$BUILD_DIR/clang-cache" \
-  SWIFTPM_MODULECACHE_OVERRIDE="$BUILD_DIR/swiftpm-cache" \
-  swift build
-
-rm -rf "$APP_DIR"
+if [[ -d "$APP_DIR" ]]; then
+  chflags -R nouchg "$APP_DIR" 2>/dev/null || true
+  chmod -R u+w "$APP_DIR" 2>/dev/null || true
+  rm -rf "$APP_DIR" 2>/dev/null || true
+fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 cp "$BUILD_DIR/debug/$APP_NAME" "$MACOS_DIR/$APP_NAME"
@@ -38,6 +36,15 @@ if [[ -f "$ROOT_DIR/Assets/Orpyt.icns" ]]; then
   cp "$ROOT_DIR/Assets/Orpyt.icns" "$RESOURCES_DIR/Orpyt.icns"
 fi
 
+# Embed Sparkle.framework if present (required for SPM builds)
+SPARKLE_FW="$(find "$BUILD_DIR/artifacts" -name "Sparkle.framework" -path "*/macos-arm64_x86_64/*" 2>/dev/null | head -1)"
+if [[ -n "$SPARKLE_FW" ]]; then
+  mkdir -p "$CONTENTS_DIR/Frameworks"
+  cp -R "$SPARKLE_FW" "$CONTENTS_DIR/Frameworks/"
+  # Add rpath so dyld can find the embedded framework
+  install_name_tool -add_rpath @loader_path/../Frameworks "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
+fi
+
 if [[ "${ORPYT_ENABLE_SIGNING:-0}" == "1" && -z "${ORPYT_SIGN_IDENTITY:-}" ]]; then
   ORPYT_SIGN_IDENTITY="$(
     security find-identity -v -p codesigning \
@@ -52,6 +59,9 @@ if [[ "${ORPYT_ENABLE_SIGNING:-0}" == "1" && -n "${ORPYT_SIGN_IDENTITY:-}" ]]; t
     --sign "$ORPYT_SIGN_IDENTITY" \
     --entitlements "$ROOT_DIR/Orpyt.entitlements" \
     "$APP_DIR"
+else
+  # Ad-hoc sign so Gatekeeper accepts the modified binary (rpath added above)
+  codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
 fi
 
 rm -rf "$DIST_APP_DIR"

@@ -198,7 +198,18 @@ public struct StatusPopoverView: View {
                                     primaryTimeZoneID: settings.primaryTimeZoneID,
                                     onOpenMeeting: openMeeting,
                                     onRequestAccess: {
-                                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                                        let status = EKEventStore.authorizationStatus(for: .event)
+                                        let isDenied: Bool
+                                        if #available(macOS 14.0, *) {
+                                            isDenied = status == .denied || status == .restricted
+                                        } else {
+                                            isDenied = status == .denied || status == .restricted
+                                        }
+                                        if isDenied {
+                                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                                        } else {
+                                            Task { await calendarStore.enable(using: settings) }
+                                        }
                                     }
                                 )
                             }
@@ -220,21 +231,13 @@ public struct StatusPopoverView: View {
                                     isOn: $settings.showSeconds,
                                     palette: palette
                                 )
-
-                                // if settings.enableWeather {
-                                //     QuickSettingChip(
-                                //         title: settings.showWeatherInMenuBar ? "Weather Icons" : "Ambient Icons",
-                                //         subtitle: "Menu bar",
-                                //         isOn: $settings.showWeatherInMenuBar,
-                                //         palette: palette
-                                //     )
-                                // }
                             }
 
                             TimeScrollerStrip(
                                 timeShiftMinutes: $timeShiftMinutes,
                                 palette: palette,
-                                isMuted: settings.muteScrollerSound
+                                isMuted: $settings.muteScrollerSound,
+                                now: context.date
                             )
 
                             if settings.enableWeather, let attribution = weatherStore.attribution {
@@ -713,6 +716,7 @@ public struct QuickSettingChip: View {
 }
 
 /// Shared reference that lets TimeScrollerWheelCapture focus the slider directly.
+@MainActor
 public final class SliderFocusProxy: ObservableObject {
     weak var slider: NSSlider?
     func focus() {
@@ -728,7 +732,8 @@ public final class SliderFocusProxy: ObservableObject {
 public struct TimeScrollerStrip: View {
     @Binding public var timeShiftMinutes: Int
     public let palette: PopoverPalette
-    public let isMuted: Bool
+    @Binding public var isMuted: Bool
+    public let now: Date
     @State private var isHovered = false
     @StateObject private var focusProxy = SliderFocusProxy()
 
@@ -746,14 +751,29 @@ public struct TimeScrollerStrip: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Time Scroller")
-                        .font(.system(size: 12, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text("Time Scroller")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(scrolledTimeLabel)
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(timeShiftMinutes == 0 ? Color.secondary : Color.accentColor)
+                    }
                     Text(timeShiftMinutes == 0 ? "Showing right now across both clocks." : shiftLabel)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
+
+                Button {
+                    isMuted.toggle()
+                } label: {
+                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isMuted ? .secondary : .primary)
+                }
+                .buttonStyle(.borderless)
+                .help(isMuted ? "Turn on scroll sound" : "Mute scroll sound")
 
                 Button(timeShiftMinutes == 0 ? "Now" : "Reset") {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
@@ -830,6 +850,14 @@ public struct TimeScrollerStrip: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
+    }
+
+    private var scrolledTimeLabel: String {
+        let shifted = now.addingTimeInterval(TimeInterval(timeShiftMinutes * 60))
+        let fmt = DateFormatter()
+        fmt.timeZone = TimeZone.current
+        fmt.dateFormat = "h:mm a"
+        return  "(" + fmt.string(from: shifted) + ")"
     }
 
     private var shiftLabel: String {
