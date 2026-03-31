@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./Assets/logo.png" alt="Orpyt Logo" width="160" style="border-radius: 50%;" />
+  <img src="./Assets/circular-orpyt.png" alt="Orpyt Logo" width="160" />
 </p>
 
 <h1 align="center">Orpyt</h1>
