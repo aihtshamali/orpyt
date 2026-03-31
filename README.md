@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./Assets/logo.png" alt="Orpyt Logo" width="160" />
+  <img src="./Assets/logo.png" alt="Orpyt Logo" width="160" style="border-radius: 50%;" />
 </p>
 
 <h1 align="center">Orpyt</h1>
@@ -20,7 +20,11 @@
 </p>
 
 <p align="center">
-  <img src="./Assets/desktop-orpyt.png" alt="Orpyt Screenshot" width="900" />
+  <img src="./Assets/SS.png" alt="Orpyt app and menu bar" width="860" />
+</p>
+
+<p align="center">
+  <img src="./Assets/desktop-orpyt.png" alt="Orpyt popover detail" width="860" />
 </p>
 
 ---
