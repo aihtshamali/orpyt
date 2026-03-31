@@ -26,6 +26,12 @@ public struct StatusPopoverView: View {
     @FocusState private var isQuickSearchFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
+    private static let maxPopoverHeight: CGFloat = 760
+
+    private var isContentOverflowing: Bool {
+        preferredPopoverHeight >= Self.maxPopoverHeight
+    }
+
     public init(
         settings: ClockSettingsStore,
         weatherStore: WeatherStore,
@@ -85,7 +91,7 @@ public struct StatusPopoverView: View {
                 PopoverBackdrop(palette: palette)
 
                 ScrollViewReader { scrollProxy in
-                    ScrollView(.vertical, showsIndicators: true) {
+                    ScrollView(isContentOverflowing ? .vertical : [], showsIndicators: isContentOverflowing) {
                         VStack(alignment: .leading, spacing: 16) {
                             Color.clear
                                 .frame(height: 0)
@@ -215,14 +221,14 @@ public struct StatusPopoverView: View {
                                     palette: palette
                                 )
 
-                                if settings.enableWeather {
-                                    QuickSettingChip(
-                                        title: settings.showWeatherInMenuBar ? "Weather Icons" : "Ambient Icons",
-                                        subtitle: "Menu bar",
-                                        isOn: $settings.showWeatherInMenuBar,
-                                        palette: palette
-                                    )
-                                }
+                                // if settings.enableWeather {
+                                //     QuickSettingChip(
+                                //         title: settings.showWeatherInMenuBar ? "Weather Icons" : "Ambient Icons",
+                                //         subtitle: "Menu bar",
+                                //         isOn: $settings.showWeatherInMenuBar,
+                                //         palette: palette
+                                //     )
+                                // }
                             }
 
                             TimeScrollerStrip(
@@ -706,12 +712,25 @@ public struct QuickSettingChip: View {
     }
 }
 
+/// Shared reference that lets TimeScrollerWheelCapture focus the slider directly.
+public final class SliderFocusProxy: ObservableObject {
+    weak var slider: NSSlider?
+    func focus() {
+        guard let slider, let window = slider.window else { return }
+        window.makeFirstResponder(slider)
+    }
+    func blur() {
+        guard let slider, let window = slider.window else { return }
+        if window.firstResponder === slider { window.makeFirstResponder(nil) }
+    }
+}
+
 public struct TimeScrollerStrip: View {
     @Binding public var timeShiftMinutes: Int
     public let palette: PopoverPalette
     public let isMuted: Bool
     @State private var isHovered = false
-    @State private var sliderFocused = false
+    @StateObject private var focusProxy = SliderFocusProxy()
 
     private var sliderValue: Binding<Double> {
         Binding(
@@ -750,7 +769,7 @@ public struct TimeScrollerStrip: View {
                 range: -12...12,
                 step: 0.25,
                 isMuted: isMuted,
-                isFocused: sliderFocused
+                focusProxy: focusProxy
             )
             .frame(height: 18)
 
@@ -790,11 +809,10 @@ public struct TimeScrollerStrip: View {
         .padding(.vertical, 12)
         .background(
             // Wheel capture behind all content so clicks pass through to buttons/labels
-            TimeScrollerWheelCapture(isMuted: isMuted) { step in
+            TimeScrollerWheelCapture(isMuted: isMuted, focusProxy: focusProxy) { step in
                 let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
                 let snapped = (newValue * 4).rounded() / 4
                 timeShiftMinutes = Int(snapped * 60)
-                sliderFocused = true
             }
         )
         .background(
@@ -808,7 +826,7 @@ public struct TimeScrollerStrip: View {
         .onHover { hovered in
             isHovered = hovered
             if !hovered {
-                sliderFocused = false
+                focusProxy.blur()
                 if timeShiftMinutes != 0 {
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
                         timeShiftMinutes = 0
@@ -836,17 +854,20 @@ public struct TimeScrollerStrip: View {
 /// normal vertical scrolling to continue through the popover content.
 public struct TimeScrollerWheelCapture: NSViewRepresentable {
     public let isMuted: Bool
+    public let focusProxy: SliderFocusProxy?
     public let onStep: (Int) -> Void
 
     public func makeNSView(context: Context) -> TimeScrollerWheelNSView {
         let view = TimeScrollerWheelNSView()
         view.isMuted = isMuted
+        view.focusProxy = focusProxy
         view.onStep = onStep
         return view
     }
 
     public func updateNSView(_ nsView: TimeScrollerWheelNSView, context: Context) {
         nsView.isMuted = isMuted
+        nsView.focusProxy = focusProxy
         nsView.onStep = onStep
     }
 }
@@ -854,6 +875,7 @@ public struct TimeScrollerWheelCapture: NSViewRepresentable {
 public final class TimeScrollerWheelNSView: NSView {
     public var onStep: (Int) -> Void = { _ in }
     public var isMuted: Bool = false
+    public var focusProxy: SliderFocusProxy?
     private var accumulatedDelta: CGFloat = 0
     private let scrollThreshold: CGFloat = 6
 
@@ -883,6 +905,7 @@ public final class TimeScrollerWheelNSView: NSView {
         while abs(accumulatedDelta) >= scrollThreshold {
             let direction = accumulatedDelta > 0 ? -1 : 1
             accumulatedDelta += accumulatedDelta > 0 ? -scrollThreshold : scrollThreshold
+            focusProxy?.focus()
             onStep(direction)
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
             TickFeedbackPlayer.shared.play(isMuted: isMuted)
@@ -895,7 +918,7 @@ public struct WheelScrubbingSlider: NSViewRepresentable {
     public let range: ClosedRange<Double>
     public let step: Double
     public let isMuted: Bool
-    public var isFocused: Bool = false
+    public var focusProxy: SliderFocusProxy? = nil
 
     public func makeCoordinator() -> Coordinator {
         Coordinator(value: $value)
@@ -907,6 +930,7 @@ public struct WheelScrubbingSlider: NSViewRepresentable {
         slider.isMuted = isMuted
         slider.target = context.coordinator
         slider.action = #selector(Coordinator.valueDidChange(_:))
+        focusProxy?.slider = slider
         return slider
     }
 
@@ -918,12 +942,7 @@ public struct WheelScrubbingSlider: NSViewRepresentable {
         if abs(nsView.doubleValue - value) > 0.001 {
             nsView.doubleValue = value
         }
-        // Focus the slider when scrolling so the track turns blue
-        if isFocused && nsView.window?.firstResponder !== nsView {
-            nsView.window?.makeFirstResponder(nsView)
-        } else if !isFocused && nsView.window?.firstResponder === nsView {
-            nsView.window?.makeFirstResponder(nil)
-        }
+        focusProxy?.slider = nsView
     }
 
     @MainActor
