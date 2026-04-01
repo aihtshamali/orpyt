@@ -74,6 +74,44 @@ jobs:
           git config --global user.email "release@orpyt.app"
           ORPYT_NOTARY_PROFILE="orpyt-ci" ./release.sh
 
+      - name: Verify release artifacts
+        run: |
+          set -euo pipefail
+          APP="dist/release/Orpyt.app"
+          PKG="dist/release/Orpyt.pkg"
+          ZIP="dist/release/Orpyt.zip"
+
+          echo "=== Code signature ==="
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          echo "=== Gatekeeper assessment (app) ==="
+          spctl --assess --type exec --verbose "$APP"
+
+          echo "=== Gatekeeper assessment (pkg) ==="
+          spctl --assess --type install --verbose "$PKG"
+
+          echo "=== Entitlements present ==="
+          codesign -d --entitlements :- "$APP" | grep -q "weatherkit" \
+            && echo "WeatherKit entitlement: OK" \
+            || echo "WARNING: WeatherKit entitlement missing"
+
+          echo "=== Executable is runnable ==="
+          EXEC=$(defaults read "$(pwd)/$APP/Contents/Info.plist" CFBundleExecutable)
+          test -x "$APP/Contents/MacOS/$EXEC" \
+            && echo "Executable $EXEC: OK" \
+            || { echo "ERROR: Executable $EXEC not found or not executable"; exit 1; }
+
+          echo "=== ZIP integrity ==="
+          ditto -x -k "$ZIP" /tmp/orpyt-zip-check 2>&1 && echo "ZIP: OK"
+          codesign --verify --deep --strict /tmp/orpyt-zip-check/Orpyt.app \
+            && echo "ZIP app signature: OK" \
+            || { echo "ERROR: ZIP app signature invalid"; exit 1; }
+
+          echo "=== PKG integrity ==="
+          pkgutil --check-signature "$PKG"
+
+          echo "All checks passed."
+
       - name: Get version
         id: version
         run: |

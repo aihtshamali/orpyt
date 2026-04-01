@@ -97,21 +97,31 @@ fi
 # If ORPYT_PROVISIONING_PROFILE is set (path to a .provisionprofile), embed it —
 # required for WeatherKit which needs the capability registered via a provisioning profile.
 if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
-  CODESIGN_ARGS=(
-    --force --deep
-    --sign "$APP_SIGN_IDENTITY"
-    --timestamp
-    --options runtime
-    --entitlements "$ROOT_DIR/Orpyt.entitlements"
-  )
-
   if [[ -n "$PROVISIONING_PROFILE" && -f "$PROVISIONING_PROFILE" ]]; then
-    # Embed the provisioning profile into the app bundle
     cp "$PROVISIONING_PROFILE" "$DIST_APP_PATH/Contents/embedded.provisionprofile"
     echo "Embedded provisioning profile: $PROVISIONING_PROFILE"
   fi
 
-  codesign "${CODESIGN_ARGS[@]}" "$DIST_APP_PATH"
+  # Sign inside-out: frameworks/dylibs first, then the app bundle.
+  # --deep is unreliable for nested content — explicit ordering avoids
+  # "resource fork, Finder information, or similar detritus" errors that
+  # cause Gatekeeper to reject the app after PKG installation.
+  find "$DIST_APP_PATH/Contents/Frameworks" -name "*.framework" -o -name "*.dylib" 2>/dev/null \
+    | sort -r \
+    | while IFS= read -r item; do
+        codesign --force \
+          --sign "$APP_SIGN_IDENTITY" \
+          --timestamp \
+          --options runtime \
+          "$item"
+      done
+
+  codesign --force \
+    --sign "$APP_SIGN_IDENTITY" \
+    --timestamp \
+    --options runtime \
+    --entitlements "$ROOT_DIR/Orpyt.entitlements" \
+    "$DIST_APP_PATH"
 fi
 
 # ── ZIP ──────────────────────────────────────────────────────────────────────
