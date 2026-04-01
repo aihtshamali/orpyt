@@ -2,37 +2,41 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleDisplayName</key>
-  <string>Orpyt</string>
-  <key>CFBundleExecutable</key>
-  <string>Orpyt</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.orpyt.clocks</string>
-  <key>CFBundleIconFile</key>
-  <string>Orpyt</string>
-  <key>CFBundleIconName</key>
-  <string>Orpyt</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>Orpyt</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>1.0.3</string>
-  <key>CFBundleVersion</key>
-  <string>4</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>13.0</string>
-  <key>LSApplicationCategoryType</key>
-  <string>public.app-category.utilities</string>
-  <key>LSUIElement</key>
-  <true/>
-  <key>NSCalendarsUsageDescription</key>
-  <string>Orpyt reads your upcoming events so it can show your next meeting in the popover.</string>
-  <key>NSSupportsAutomaticGraphicsSwitching</key>
-  <true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Orpyt</string>
+	<key>CFBundleExecutable</key>
+	<string>Orpyt</string>
+	<key>CFBundleIconFile</key>
+	<string>Orpyt</string>
+	<key>CFBundleIconName</key>
+	<string>Orpyt</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.orpyt.clocks</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Orpyt</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.3</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Orpyt reads your upcoming events so it can show your next meeting in the popover.</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://aihtshamali.github.io/orpyt/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=</string>
 </dict>
 </plist>

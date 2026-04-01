@@ -54,7 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsWindowController = SettingsWindowController(
             settings: settings,
             weatherStore: weatherStore,
-            calendarStore: calendarStore
+            calendarStore: calendarStore,
+            onCheckForUpdates: { [weak self] in self?.checkForUpdates() }
         )
         statusController = StatusBarController(
             settings: settings,
@@ -507,11 +508,13 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
     private let hostingController: NSHostingController<AnyView>
+    private let onCheckForUpdates: () -> Void
 
-    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore) {
+    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, onCheckForUpdates: @escaping () -> Void) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.onCheckForUpdates = onCheckForUpdates
         hostingController = NSHostingController(rootView: AnyView(EmptyView()))
         let window = OrpytSettingsWindow(contentViewController: hostingController)
 
@@ -570,7 +573,7 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     }
 
     private func refreshSettingsView() {
-        let view = SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
+        let view = SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, onCheckForUpdates: onCheckForUpdates)
         switch settings.appearanceMode {
         case .system:
             hostingController.rootView = AnyView(view)

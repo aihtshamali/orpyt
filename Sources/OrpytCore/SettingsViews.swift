@@ -11,14 +11,16 @@ public struct SettingsView: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
+    public let onCheckForUpdates: () -> Void
     @State private var primarySearchText = ""
     @State private var secondarySearchText = ""
     @State private var selectedPane: SettingsPane? = .overview
 
-    public init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore) {
+    public init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, onCheckForUpdates: @escaping () -> Void) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.onCheckForUpdates = onCheckForUpdates
     }
 
     public var body: some View {
@@ -39,7 +41,7 @@ public struct SettingsView: View {
     private func detailView(for pane: SettingsPane) -> some View {
         switch pane {
         case .overview:
-            SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore)
+            SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, onCheckForUpdates: onCheckForUpdates)
                 .navigationTitle("Overview")
         case .timeZones:
             TimeZonesPane(
@@ -108,6 +110,7 @@ public struct SettingsOverviewPane: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
+    public let onCheckForUpdates: () -> Void
 
     private let metricColumns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 2)
 
@@ -123,7 +126,7 @@ public struct SettingsOverviewPane: View {
 
     private func overviewContent(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 22) {
-            OverviewHeroHeader(settings: settings)
+            OverviewHeroHeader(settings: settings, onCheckForUpdates: onCheckForUpdates)
 
             if settings.isMenuBarOverflowing {
                 MenuBarOverflowBanner()
@@ -243,10 +246,15 @@ public struct SettingsOverviewPane: View {
 
 public struct OverviewHeroHeader: View {
     @ObservedObject public var settings: ClockSettingsStore
+    public let onCheckForUpdates: () -> Void
 
     private var systemZoneTitle: String {
         TimeZone.current.identifier.split(separator: "/").last?
             .replacingOccurrences(of: "_", with: " ") ?? "Local"
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     }
 
     public var body: some View {
@@ -266,10 +274,14 @@ public struct OverviewHeroHeader: View {
                 Spacer(minLength: 16)
 
                 VStack(alignment: .trailing, spacing: 8) {
-                    OverviewInlineTag(title: "Appearance", value: settings.appearanceMode.title)
-                    Text("System time zone: \(systemZoneTitle)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Button("Check for Updates…", action: onCheckForUpdates)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    if !appVersion.isEmpty {
+                        Text("Version \(appVersion)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -997,31 +1009,31 @@ public struct TimeZonesPane: View {
     @State private var selectedSlot: ClockSlot = .primary
 
     public var body: some View {
-        Form {
-            Section("Clock") {
-                Picker("Edit clock", selection: $selectedSlot) {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                Picker("", selection: $selectedSlot) {
                     Text("Primary").tag(ClockSlot.primary)
                     Text("Secondary").tag(ClockSlot.secondary)
                 }
                 .pickerStyle(.segmented)
-            }
+                .labelsHidden()
 
-            Section("Location") {
-                TimeZonePickerCard(
+                InlineTimeZoneEditorView(
                     title: selectedSlot == .primary ? "Primary Clock" : "Secondary Clock",
-                    customLabel: selectedSlot == .primary ? $settings.primaryCustomLabel : $settings.secondaryCustomLabel,
                     selectedTimeZoneID: selectedSlot == .primary ? $settings.primaryTimeZoneID : $settings.secondaryTimeZoneID,
-                    searchText: selectedSlot == .primary ? $primarySearchText : $secondarySearchText
+                    customLabel: selectedSlot == .primary ? $settings.primaryCustomLabel : $settings.secondaryCustomLabel,
+                    searchText: selectedSlot == .primary ? $primarySearchText : $secondarySearchText,
+                    onDone: {}
                 )
-            }
 
-            Section {
-                Button("Swap Primary and Secondary") {
+                Button("Swap Primary ↔ Secondary") {
                     settings.swapTimeZones()
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+            .padding(24)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -1220,153 +1232,6 @@ public final class OrpytSettingsWindow: NSWindow {
     }
 }
 
-public struct GlossyInputGroup<Content: View>: View {
-    public let title: String
-    public let description: String
-    @ViewBuilder let content: Content
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-            content
-            Text(description)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-public struct TimeZonePickerCard: View {
-    public let title: String
-    @Binding public var customLabel: String
-    @Binding public var selectedTimeZoneID: String
-    @Binding public var searchText: String
-    @State private var useCustomLabel: Bool
-
-    public init(
-        title: String,
-        customLabel: Binding<String>,
-        selectedTimeZoneID: Binding<String>,
-        searchText: Binding<String>
-    ) {
-        self.title = title
-        _customLabel = customLabel
-        _selectedTimeZoneID = selectedTimeZoneID
-        _searchText = searchText
-        _useCustomLabel = State(
-            initialValue: !customLabel.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        )
-    }
-
-    private var filteredOptions: [TimeZoneOption] {
-        TimeZoneSearchProvider.results(
-            for: searchText,
-            suggestions: [selectedTimeZoneID, TimeZone.current.identifier,
-                          "America/New_York", "America/Los_Angeles", "Europe/London",
-                          "Europe/Paris", "Asia/Dubai", "Asia/Karachi",
-                          "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Australia/Sydney"],
-            limit: 80
-        )
-    }
-
-    private var selectedOption: TimeZoneOption? {
-        TimeZoneCatalog.option(for: selectedTimeZoneID)
-    }
-
-    private func useCurrentTimeZone() {
-        selectedTimeZoneID = TimeZone.current.identifier
-        searchText = ""
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button("Use Current Time Zone", action: useCurrentTimeZone)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .orpytClickableHover(scale: 1.02, brightness: 0.012)
-            }
-
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedOption?.cityName ?? selectedTimeZoneID)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(selectedOption?.id ?? selectedTimeZoneID)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Toggle("Custom Name", isOn: $useCustomLabel)
-                    .controlSize(.small)
-            }
-
-            if useCustomLabel {
-                TextField("Custom label", text: $customLabel)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            TextField("Search time zone", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Suggested cities are shown first. Start typing to search the full time zone list.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            List {
-                ForEach(filteredOptions) { option in
-                    Button {
-                        selectedTimeZoneID = option.id
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(option.displayName)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                Text(option.id)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            if selectedTimeZoneID == option.id {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .orpytClickableHover(scale: 1.01, brightness: 0.012)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
-                }
-            }
-            .listStyle(.inset)
-            .frame(height: 280)
-        }
-        .padding(.top, 2)
-        .onChange(of: useCustomLabel) { isEnabled in
-            if !isEnabled {
-                customLabel = ""
-            }
-        }
-        .onChange(of: selectedTimeZoneID) { _ in
-            if !useCustomLabel {
-                customLabel = ""
-            }
-        }
-    }
-}
 
 public struct PrimaryGlassButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
