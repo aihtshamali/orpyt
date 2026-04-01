@@ -15,8 +15,8 @@ public struct ClockCardView: View {
     @ObservedObject public var settings: ClockSettingsStore
     public let weatherState: WeatherState
     public let date: Date
-    public let isEditing: Bool
     public let palette: PopoverPalette
+    public let onTap: (() -> Void)?
 
     private var timeFontSize: CGFloat {
         if settings.showSeconds {
@@ -72,11 +72,6 @@ public struct ClockCardView: View {
                 weatherState: weatherState
             )
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
-
-            Text(isEditing ? "Editing from popover" : "Click to change city")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
         .padding(18)
         .frame(
@@ -86,12 +81,16 @@ public struct ClockCardView: View {
         )
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(isEditing ? palette.chipOnFill : palette.cardFill)
+                .fill(palette.cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(isEditing ? Color.accentColor.opacity(0.35) : palette.cardStroke, lineWidth: 1)
+                .stroke(palette.cardStroke, lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .onTapGesture {
+            onTap?()
+        }
     }
 }
 

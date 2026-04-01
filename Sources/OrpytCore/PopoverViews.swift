@@ -142,8 +142,14 @@ public struct StatusPopoverView: View {
                                         settings: settings,
                                         weatherState: weatherStore.state(for: .primary),
                                         date: displayedDate,
-                                        isEditing: false,
-                                        palette: palette
+                                        palette: palette,
+                                        onTap: {
+                                            quickSearchTarget = .primary
+                                            if !isQuickSearchPresented {
+                                                isQuickSearchPresented = true
+                                                DispatchQueue.main.async { isQuickSearchFocused = true }
+                                            }
+                                        }
                                     )
                                 }
 
@@ -159,8 +165,14 @@ public struct StatusPopoverView: View {
                                         settings: settings,
                                         weatherState: weatherStore.state(for: .secondary),
                                         date: displayedDate,
-                                        isEditing: false,
-                                        palette: palette
+                                        palette: palette,
+                                        onTap: {
+                                            quickSearchTarget = .secondary
+                                            if !isQuickSearchPresented {
+                                                isQuickSearchPresented = true
+                                                DispatchQueue.main.async { isQuickSearchFocused = true }
+                                            }
+                                        }
                                     )
                                 }
                             }
