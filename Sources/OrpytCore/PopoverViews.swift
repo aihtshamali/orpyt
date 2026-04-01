@@ -145,10 +145,7 @@ public struct StatusPopoverView: View {
                                         palette: palette,
                                         onTap: {
                                             quickSearchTarget = .primary
-                                            if !isQuickSearchPresented {
-                                                isQuickSearchPresented = true
-                                                DispatchQueue.main.async { isQuickSearchFocused = true }
-                                            }
+                                            if !isQuickSearchPresented { toggleQuickSearch() }
                                         }
                                     )
                                 }
@@ -168,10 +165,7 @@ public struct StatusPopoverView: View {
                                         palette: palette,
                                         onTap: {
                                             quickSearchTarget = .secondary
-                                            if !isQuickSearchPresented {
-                                                isQuickSearchPresented = true
-                                                DispatchQueue.main.async { isQuickSearchFocused = true }
-                                            }
+                                            if !isQuickSearchPresented { toggleQuickSearch() }
                                         }
                                     )
                                 }
