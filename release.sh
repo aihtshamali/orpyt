@@ -102,37 +102,37 @@ if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
     echo "Embedded provisioning profile: $PROVISIONING_PROFILE"
   fi
 
-  # Sign inside-out: deepest nested binaries first, app bundle last.
-  # --deep is unreliable — it misses XPC services and nested .app helpers
-  # inside frameworks (e.g. Sparkle ships Updater.app, Installer.xpc,
-  # Downloader.xpc). Apple notarization rejects anything with unsigned
-  # nested executables, so we sign every layer explicitly.
+  # Sign inside-out: deepest nested Mach-O binaries first, app bundle last.
+  # --deep silently skips nested bundles and re-signs them ad-hoc.
+  # Explicit ordering: bare executables → XPC bundles → helper .apps → frameworks → app.
 
-  # 1. dylibs
+  _sign() {
+    codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$1"
+  }
+
+  # 1. Bare Mach-O executables inside frameworks (e.g. Sparkle's Autoupdate tool)
+  find "$DIST_APP_PATH/Contents/Frameworks" -type f -not -path "*/_CodeSignature/*" 2>/dev/null \
+    | while IFS= read -r f; do
+        file "$f" 2>/dev/null | grep -q "Mach-O" && _sign "$f" || true
+      done
+
+  # 2. dylibs anywhere in the bundle
   find "$DIST_APP_PATH" -name "*.dylib" 2>/dev/null \
-    | while IFS= read -r item; do
-        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
-      done
+    | while IFS= read -r item; do _sign "$item"; done
 
-  # 2. XPC services (inside frameworks or PlugIns)
+  # 3. XPC service bundles
   find "$DIST_APP_PATH" -name "*.xpc" 2>/dev/null \
-    | while IFS= read -r item; do
-        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
-      done
+    | while IFS= read -r item; do _sign "$item"; done
 
-  # 3. Nested helper .app bundles (e.g. Sparkle's Updater.app)
+  # 4. Nested helper .app bundles inside frameworks
   find "$DIST_APP_PATH/Contents/Frameworks" -name "*.app" 2>/dev/null \
-    | while IFS= read -r item; do
-        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
-      done
+    | while IFS= read -r item; do _sign "$item"; done
 
-  # 4. Frameworks
+  # 5. Frameworks
   find "$DIST_APP_PATH/Contents/Frameworks" -name "*.framework" 2>/dev/null \
-    | while IFS= read -r item; do
-        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
-      done
+    | while IFS= read -r item; do _sign "$item"; done
 
-  # 5. The app bundle itself
+  # 6. The app bundle itself (with entitlements)
   codesign --force \
     --sign "$APP_SIGN_IDENTITY" \
     --timestamp \
@@ -278,20 +278,23 @@ fi
 
 notarize_and_staple() {
   local artifact="$1"
-  local submission_id
-  submission_id=$(xcrun notarytool submit "$artifact" \
-    "${NOTARY_ARGS[@]}" --wait --output-format json \
-    | tee /dev/stderr \
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+  local notary_json notary_id notary_status
 
-  local status
-  status=$(xcrun notarytool info "$submission_id" "${NOTARY_ARGS[@]}" \
-    --output-format json 2>/dev/null \
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
+  notary_json=$(xcrun notarytool submit "$artifact" \
+    "${NOTARY_ARGS[@]}" --wait --output-format json 2>&1)
+  echo "$notary_json"
 
-  if [[ "$status" != "Accepted" ]]; then
-    echo "Notarization failed for $artifact (status: $status). Fetching log..."
-    xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" 2>/dev/null || true
+  notary_id=$(echo "$notary_json" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
+  notary_status=$(echo "$notary_json" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || true)
+
+  if [[ "$notary_status" != "Accepted" ]]; then
+    echo "Notarization failed for $artifact (status: $notary_status)."
+    if [[ -n "$notary_id" ]]; then
+      echo "=== Notarization log ==="
+      xcrun notarytool log "$notary_id" "${NOTARY_ARGS[@]}" 2>&1 || true
+    fi
     exit 1
   fi
 
