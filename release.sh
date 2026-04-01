@@ -102,20 +102,37 @@ if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
     echo "Embedded provisioning profile: $PROVISIONING_PROFILE"
   fi
 
-  # Sign inside-out: frameworks/dylibs first, then the app bundle.
-  # --deep is unreliable for nested content — explicit ordering avoids
-  # "resource fork, Finder information, or similar detritus" errors that
-  # cause Gatekeeper to reject the app after PKG installation.
-  find "$DIST_APP_PATH/Contents/Frameworks" -name "*.framework" -o -name "*.dylib" 2>/dev/null \
-    | sort -r \
+  # Sign inside-out: deepest nested binaries first, app bundle last.
+  # --deep is unreliable — it misses XPC services and nested .app helpers
+  # inside frameworks (e.g. Sparkle ships Updater.app, Installer.xpc,
+  # Downloader.xpc). Apple notarization rejects anything with unsigned
+  # nested executables, so we sign every layer explicitly.
+
+  # 1. dylibs
+  find "$DIST_APP_PATH" -name "*.dylib" 2>/dev/null \
     | while IFS= read -r item; do
-        codesign --force \
-          --sign "$APP_SIGN_IDENTITY" \
-          --timestamp \
-          --options runtime \
-          "$item"
+        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
       done
 
+  # 2. XPC services (inside frameworks or PlugIns)
+  find "$DIST_APP_PATH" -name "*.xpc" 2>/dev/null \
+    | while IFS= read -r item; do
+        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
+      done
+
+  # 3. Nested helper .app bundles (e.g. Sparkle's Updater.app)
+  find "$DIST_APP_PATH/Contents/Frameworks" -name "*.app" 2>/dev/null \
+    | while IFS= read -r item; do
+        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
+      done
+
+  # 4. Frameworks
+  find "$DIST_APP_PATH/Contents/Frameworks" -name "*.framework" 2>/dev/null \
+    | while IFS= read -r item; do
+        codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp --options runtime "$item"
+      done
+
+  # 5. The app bundle itself
   codesign --force \
     --sign "$APP_SIGN_IDENTITY" \
     --timestamp \
@@ -259,29 +276,39 @@ fi
 
 # ── Notarise + staple ────────────────────────────────────────────────────────
 
+notarize_and_staple() {
+  local artifact="$1"
+  local submission_id
+  submission_id=$(xcrun notarytool submit "$artifact" \
+    "${NOTARY_ARGS[@]}" --wait --output-format json \
+    | tee /dev/stderr \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+
+  local status
+  status=$(xcrun notarytool info "$submission_id" "${NOTARY_ARGS[@]}" \
+    --output-format json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
+
+  if [[ "$status" != "Accepted" ]]; then
+    echo "Notarization failed for $artifact (status: $status). Fetching log..."
+    xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" 2>/dev/null || true
+    exit 1
+  fi
+
+  xcrun stapler staple "$artifact"
+}
+
 if [[ -n "$NOTARY_PROFILE" ]]; then
-  xcrun notarytool submit "$PKG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
-  xcrun stapler staple "$PKG_PATH"
+  NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+  notarize_and_staple "$PKG_PATH"
   if [[ "$SKIP_DMG" != "1" ]]; then
-    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
-    xcrun stapler staple "$DMG_PATH"
+    notarize_and_staple "$DMG_PATH"
   fi
 elif [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_PASSWORD" ]]; then
-  xcrun notarytool submit \
-    "$PKG_PATH" \
-    --apple-id "$NOTARY_APPLE_ID" \
-    --team-id "$NOTARY_TEAM_ID" \
-    --password "$NOTARY_PASSWORD" \
-    --wait
-  xcrun stapler staple "$PKG_PATH"
+  NOTARY_ARGS=(--apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD")
+  notarize_and_staple "$PKG_PATH"
   if [[ "$SKIP_DMG" != "1" ]]; then
-    xcrun notarytool submit \
-      "$DMG_PATH" \
-      --apple-id "$NOTARY_APPLE_ID" \
-      --team-id "$NOTARY_TEAM_ID" \
-      --password "$NOTARY_PASSWORD" \
-      --wait
-    xcrun stapler staple "$DMG_PATH"
+    notarize_and_staple "$DMG_PATH"
   fi
 else
   echo "Skipping notarization. Set ORPYT_NOTARY_PROFILE or Apple ID/team/password env vars to notarize."
