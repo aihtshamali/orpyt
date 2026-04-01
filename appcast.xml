@@ -3,13 +3,13 @@
     <channel>
         <title>Orpyt</title>
         <item>
-            <title>1.0</title>
-            <pubDate>Wed, 01 Apr 2026 18:53:24 +0000</pubDate>
+            <title>1.0.4</title>
+            <pubDate>Wed, 01 Apr 2026 19:06:33 +0000</pubDate>
             <link>https://github.com/aihtshamali/orpyt</link>
-            <sparkle:version>1</sparkle:version>
-            <sparkle:shortVersionString>1.0</sparkle:shortVersionString>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/aihtshamali/orpyt/releases/download/v1.0.4/Orpyt.dmg" length="5660365" type="application/octet-stream"/>
+            <enclosure url="https://github.com/aihtshamali/orpyt/releases/download/v1.0.4/Orpyt.dmg" length="5659978" type="application/octet-stream" sparkle:edSignature="j24ww9xeeUfxwh2EGwhOJgGJYn5Ku4Knne4KRxRBH7gqA8+JLUZksVeB/ngU1zUHYuO0fmawOCNPzUajSULDAg=="/>
         </item>
     </channel>
 </rss>
