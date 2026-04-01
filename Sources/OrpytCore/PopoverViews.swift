@@ -27,8 +27,8 @@ public struct StatusPopoverView: View {
 
     private static let maxPopoverHeight: CGFloat = 760
 
-    private var isContentOverflowing: Bool {
-        preferredPopoverHeight >= Self.maxPopoverHeight
+    private var isScrollEnabled: Bool {
+        isQuickSearchPresented
     }
 
     public init(
@@ -86,7 +86,7 @@ public struct StatusPopoverView: View {
                 PopoverBackdrop(palette: palette)
 
                 ScrollViewReader { scrollProxy in
-                    ScrollView(isContentOverflowing ? .vertical : [], showsIndicators: isContentOverflowing) {
+                    ScrollView(isScrollEnabled ? .vertical : [], showsIndicators: isScrollEnabled) {
                         VStack(alignment: .leading, spacing: 16) {
                             Color.clear
                                 .frame(height: 0)
@@ -784,6 +784,7 @@ public struct TimeScrollerStrip: View {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                             timeShiftMinutes = item.hour * 60
                         }
+                        focusProxy.focus()
                     }
                     .cursor(.pointingHand)
                 }
