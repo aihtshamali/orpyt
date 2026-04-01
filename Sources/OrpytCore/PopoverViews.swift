@@ -93,7 +93,13 @@ public struct StatusPopoverView: View {
                                 .id("popoverTop")
 
                             HStack(alignment: .center, spacing: 12) {
-                                headerContent
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Orpyt")
+                                        .font(.system(size: 17, weight: .semibold))
+                                    Text("Synced across cities, weather, and work.")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
 
                                 Spacer()
 
@@ -116,6 +122,38 @@ public struct StatusPopoverView: View {
                             }
 
                             if isQuickSearchPresented {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+
+                                        TextField("Search city or time zone", text: $quickSearchText)
+                                            .textFieldStyle(.plain)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .focused($isQuickSearchFocused)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(palette.chromeFill)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .stroke(palette.chromeStroke, lineWidth: 0.8)
+                                    )
+
+                                    if visibleSlots.count > 1 {
+                                        Picker("Target", selection: $quickSearchTarget) {
+                                            Text("Primary").tag(ClockSlot.primary)
+                                            Text("Secondary").tag(ClockSlot.secondary)
+                                        }
+                                        .pickerStyle(.segmented)
+                                    }
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+
                                 PopoverQuickSearchView(
                                     searchText: $quickSearchText,
                                     targetSlot: $quickSearchTarget,
@@ -144,8 +182,12 @@ public struct StatusPopoverView: View {
                                         date: displayedDate,
                                         palette: palette,
                                         onTap: {
-                                            quickSearchTarget = .primary
-                                            if !isQuickSearchPresented { toggleQuickSearch() }
+                                            if isQuickSearchPresented && quickSearchTarget == .primary {
+                                                toggleQuickSearch()
+                                            } else {
+                                                quickSearchTarget = .primary
+                                                if !isQuickSearchPresented { toggleQuickSearch() }
+                                            }
                                         }
                                     )
                                 }
@@ -164,8 +206,12 @@ public struct StatusPopoverView: View {
                                         date: displayedDate,
                                         palette: palette,
                                         onTap: {
-                                            quickSearchTarget = .secondary
-                                            if !isQuickSearchPresented { toggleQuickSearch() }
+                                            if isQuickSearchPresented && quickSearchTarget == .secondary {
+                                                toggleQuickSearch()
+                                            } else {
+                                                quickSearchTarget = .secondary
+                                                if !isQuickSearchPresented { toggleQuickSearch() }
+                                            }
                                         }
                                     )
                                 }
@@ -271,51 +317,6 @@ public struct StatusPopoverView: View {
     }
 
 
-    private var headerContent: some View {
-        Group {
-            if isQuickSearchPresented {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-
-                        TextField("Search city or time zone", text: $quickSearchText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13, weight: .medium))
-                            .focused($isQuickSearchFocused)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(palette.chromeFill)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(palette.chromeStroke, lineWidth: 0.8)
-                    )
-
-                    if visibleSlots.count > 1 {
-                        Picker("Target", selection: $quickSearchTarget) {
-                            Text("Primary").tag(ClockSlot.primary)
-                            Text("Secondary").tag(ClockSlot.secondary)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 240)
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Orpyt")
-                        .font(.system(size: 17, weight: .semibold))
-                    Text("Synced across cities, weather, and work.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
 
     private var visibleSlots: [ClockSlot] {
         var slots: [ClockSlot] = []
