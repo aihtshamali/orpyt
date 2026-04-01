@@ -34,6 +34,7 @@ MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionStri
 
 ALLOW_UNSIGNED="${ORPYT_ALLOW_UNSIGNED:-0}"
 SKIP_DMG="${ORPYT_SKIP_DMG:-0}"
+PROVISIONING_PROFILE="${ORPYT_PROVISIONING_PROFILE:-}"
 NOTARY_PROFILE="${ORPYT_NOTARY_PROFILE:-}"
 NOTARY_APPLE_ID="${ORPYT_NOTARY_APPLE_ID:-}"
 NOTARY_TEAM_ID="${ORPYT_NOTARY_TEAM_ID:-}"
@@ -93,13 +94,24 @@ fi
 
 # Re-sign with Developer ID Application + secure timestamp (required for notarisation).
 # Covers the Resources directory now that we injected the .icns.
+# If ORPYT_PROVISIONING_PROFILE is set (path to a .provisionprofile), embed it —
+# required for WeatherKit which needs the capability registered via a provisioning profile.
 if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
-  codesign --force --deep \
-    --sign "$APP_SIGN_IDENTITY" \
-    --timestamp \
-    --options runtime \
-    --entitlements "$ROOT_DIR/Orpyt.entitlements" \
-    "$DIST_APP_PATH"
+  CODESIGN_ARGS=(
+    --force --deep
+    --sign "$APP_SIGN_IDENTITY"
+    --timestamp
+    --options runtime
+    --entitlements "$ROOT_DIR/Orpyt.entitlements"
+  )
+
+  if [[ -n "$PROVISIONING_PROFILE" && -f "$PROVISIONING_PROFILE" ]]; then
+    # Embed the provisioning profile into the app bundle
+    cp "$PROVISIONING_PROFILE" "$DIST_APP_PATH/Contents/embedded.provisionprofile"
+    echo "Embedded provisioning profile: $PROVISIONING_PROFILE"
+  fi
+
+  codesign "${CODESIGN_ARGS[@]}" "$DIST_APP_PATH"
 fi
 
 # ── ZIP ──────────────────────────────────────────────────────────────────────

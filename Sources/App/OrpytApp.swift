@@ -75,8 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Poll for menu bar overflow: if the status item is hidden (menu bar full),
         // surface a Dock icon so the user can still reach Orpyt.
-        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak statusController] _ in
+        Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak statusController, weak settingsWindowController] _ in
             Task { @MainActor in
+                guard settingsWindowController?.window?.isVisible != true else { return }
                 statusController?.updateDockVisibilityForOverflow()
             }
         }
@@ -155,25 +156,42 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         }
     }
 
+    // Consecutive checks where button.window was nil — must reach threshold before
+    // we conclude the menu bar is actually full (avoids transient false positives).
+    private var overflowMissCount = 0
+    private let overflowMissThreshold = 3
+
     /// Shows a Dock icon + menu when the menu bar item is hidden due to overflow,
     /// and hides it again once the item becomes visible.
     func updateDockVisibilityForOverflow() {
-        let isHidden = statusItem.button?.window == nil
+        // Don't touch activation policy while the popover is open
+        guard !popover.isShown else { return }
+
+        let buttonVisible = statusItem.button?.window != nil
         let currentPolicy = NSApp.activationPolicy()
 
-        if isHidden && currentPolicy == .accessory {
-            NSApp.setActivationPolicy(.regular)
-            let menu = NSMenu()
-            menu.addItem(withTitle: "Open Orpyt", action: #selector(togglePopover(_:)), keyEquivalent: "")
-                .target = self
-            menu.addItem(.separator())
-            menu.addItem(withTitle: "Settings…", action: #selector(openSettingsFromDock), keyEquivalent: ",")
-                .target = self
-            menu.addItem(.separator())
-            menu.addItem(withTitle: "Quit Orpyt", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-            NSApp.mainMenu = menu
-        } else if !isHidden && currentPolicy == .regular {
-            NSApp.setActivationPolicy(.accessory)
+        if buttonVisible {
+            overflowMissCount = 0
+            settings.isMenuBarOverflowing = false
+            if currentPolicy == .regular {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        } else {
+            overflowMissCount += 1
+            guard overflowMissCount >= overflowMissThreshold else { return }
+            settings.isMenuBarOverflowing = true
+            if currentPolicy == .accessory {
+                NSApp.setActivationPolicy(.regular)
+                let menu = NSMenu()
+                menu.addItem(withTitle: "Open Orpyt", action: #selector(togglePopover(_:)), keyEquivalent: "")
+                    .target = self
+                menu.addItem(.separator())
+                menu.addItem(withTitle: "Settings…", action: #selector(openSettingsFromDock), keyEquivalent: ",")
+                    .target = self
+                menu.addItem(.separator())
+                menu.addItem(withTitle: "Quit Orpyt", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+                NSApp.mainMenu = menu
+            }
         }
     }
 

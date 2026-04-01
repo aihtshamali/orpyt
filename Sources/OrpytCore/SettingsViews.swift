@@ -125,6 +125,10 @@ public struct SettingsOverviewPane: View {
         VStack(alignment: .leading, spacing: 22) {
             OverviewHeroHeader(settings: settings)
 
+            if settings.isMenuBarOverflowing {
+                MenuBarOverflowBanner()
+            }
+
             OverviewMenuBarPreview(settings: settings, now: now)
 
             HStack(alignment: .top, spacing: 18) {
@@ -275,6 +279,42 @@ public struct OverviewHeroHeader: View {
                 OverviewInlineTag(title: "System", value: systemZoneTitle)
             }
         }
+    }
+}
+
+public struct MenuBarOverflowBanner: View {
+    public var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Menu bar is full")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Orpyt is hidden because your menu bar has no space. Use **Bartender** or **Ice** (free) to manage menu bar icons and reveal Orpyt.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button("Get Ice") {
+                NSWorkspace.shared.open(URL(string: "https://icemenubar.app")!)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+        )
     }
 }
 

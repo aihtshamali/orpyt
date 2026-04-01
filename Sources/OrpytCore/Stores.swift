@@ -60,6 +60,8 @@ public final class ClockSettingsStore: ObservableObject {
     @Published public var muteScrollerSound: Bool { didSet { scheduleSave() } }
     // Stored as the enum directly — avoids silent rawValue mismatch fallback to .system
     @Published public var appearanceMode: AppearanceMode { didSet { scheduleSave() } }
+    /// Runtime-only: true when the status item is hidden due to menu bar overflow.
+    @Published public var isMenuBarOverflowing: Bool = false
 
     private let defaults = UserDefaults.standard
     private var saveDebounceTask: Task<Void, Never>?
