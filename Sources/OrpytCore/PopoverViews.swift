@@ -1014,25 +1014,22 @@ public final class WheelScrubbingNSSlider: NSSlider {
 public final class TickFeedbackPlayer {
     public static let shared = TickFeedbackPlayer()
 
-    private let sound: NSSound?
+    // Template sound — never played directly; cloned for each tick so there's
+    // no stop/play contention and playback starts with zero latency.
+    private let template: NSSound?
 
     private init() {
         if let bundled = NSSound(named: NSSound.Name("Tink")) {
-            sound = bundled
+            template = bundled
         } else {
-            sound = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true)
+            template = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true)
         }
-
-        sound?.volume = 0.22
+        template?.volume = 0.22
     }
 
     public func play(isMuted: Bool = false) {
-        guard !isMuted else { return }
-        guard let sound else { return }
-        if sound.isPlaying {
-            sound.stop()
-        }
-        sound.play()
+        guard !isMuted, let copy = template?.copy() as? NSSound else { return }
+        copy.play()
     }
 }
 
