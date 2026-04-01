@@ -1,0 +1,17 @@
+#!/bin/zsh
+# Launch Orpyt immediately after installation for the current user.
+# $USER is set by the installer to the installing user.
+
+APP="/Applications/Orpyt.app"
+
+if [[ -d "$APP" ]]; then
+    # Use launchctl to open in the user's GUI session (works for PKG installs)
+    if [[ -n "$USER" ]]; then
+        uid=$(id -u "$USER" 2>/dev/null)
+        if [[ -n "$uid" ]]; then
+            launchctl asuser "$uid" open -a "$APP" &
+        fi
+    fi
+fi
+
+exit 0

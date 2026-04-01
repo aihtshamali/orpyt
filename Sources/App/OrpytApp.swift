@@ -72,6 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settingsWindowController.show()
             }
         }
+
+        // Poll for menu bar overflow: if the status item is hidden (menu bar full),
+        // surface a Dock icon so the user can still reach Orpyt.
+        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak statusController] _ in
+            Task { @MainActor in
+                statusController?.updateDockVisibilityForOverflow()
+            }
+        }
     }
 }
 
@@ -145,6 +153,32 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.updateDisplay()
             }
         }
+    }
+
+    /// Shows a Dock icon + menu when the menu bar item is hidden due to overflow,
+    /// and hides it again once the item becomes visible.
+    func updateDockVisibilityForOverflow() {
+        let isHidden = statusItem.button?.window == nil
+        let currentPolicy = NSApp.activationPolicy()
+
+        if isHidden && currentPolicy == .accessory {
+            NSApp.setActivationPolicy(.regular)
+            let menu = NSMenu()
+            menu.addItem(withTitle: "Open Orpyt", action: #selector(togglePopover(_:)), keyEquivalent: "")
+                .target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Settings…", action: #selector(openSettingsFromDock), keyEquivalent: ",")
+                .target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Quit Orpyt", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            NSApp.mainMenu = menu
+        } else if !isHidden && currentPolicy == .regular {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    @objc private func openSettingsFromDock() {
+        settingsWindowController.show()
     }
 
     private func configurePopover() {

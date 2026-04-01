@@ -115,6 +115,7 @@ pkgbuild \
   --install-location /Applications \
   --identifier "$PKG_IDENTIFIER" \
   --version "$MARKETING_VERSION" \
+  --scripts "$ROOT_DIR/Packaging/scripts" \
   "$PKG_COMPONENT_PATH"
 
 cp "$ROOT_DIR/Packaging/InstallerResources/welcome.html" "$PKG_RESOURCES_DIR/welcome.html"
