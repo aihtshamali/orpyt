@@ -130,9 +130,11 @@ jobs:
           body: |
             ## Install
 
-            **Recommended:** Download **Orpyt.dmg**, open it, drag to Applications.
+            **Recommended:** Download **Orpyt.dmg**, open it, drag Orpyt to Applications. Then double-click it from Applications to launch.
 
-            Also available as **Orpyt.pkg** (double-click installer) or **Orpyt.zip** (manual drag).
+            > **If you see "can't be opened"** after installing: right-click Orpyt in Applications → Open → Open. This only happens once.
+
+            Also available as **Orpyt.pkg** (installer) or **Orpyt.zip** (manual drag).
 
             ## Requirements
             - macOS 13.0 Ventura or later
