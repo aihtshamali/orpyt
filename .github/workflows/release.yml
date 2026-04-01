@@ -64,6 +64,15 @@ jobs:
             --team-id "$NOTARY_TEAM_ID" \
             --password "$NOTARY_PASSWORD"
 
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -scheme Orpyt \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Build, sign, notarize, generate appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}

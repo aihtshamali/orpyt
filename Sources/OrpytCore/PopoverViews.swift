@@ -80,7 +80,7 @@ public struct StatusPopoverView: View {
     }
 
     public var body: some View {
-        TimelineView(.periodic(from: .now, by: settings.showSeconds ? 1 : 60)) { context in
+        TimelineView(.periodic(from: .now, by: settings.showSeconds ? 1 : 60)) { (context: TimelineViewDefaultContext) in
             let displayedDate = context.date.addingTimeInterval(TimeInterval(timeShiftMinutes * 60))
             ZStack(alignment: .topLeading) {
                 PopoverBackdrop(palette: palette)
@@ -107,7 +107,7 @@ public struct StatusPopoverView: View {
                                     CompactGlassButton(
                                         symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
                                         palette: palette,
-                                        action: toggleQuickSearch
+                                        action: { toggleQuickSearch() }
                                     )
                                     .help(isQuickSearchPresented ? "Close search" : "Search cities")
                                     CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
@@ -185,8 +185,7 @@ public struct StatusPopoverView: View {
                                             if isQuickSearchPresented && quickSearchTarget == .primary {
                                                 toggleQuickSearch()
                                             } else {
-                                                quickSearchTarget = .primary
-                                                if !isQuickSearchPresented { toggleQuickSearch() }
+                                                toggleQuickSearch(targeting: .primary)
                                             }
                                         }
                                     )
@@ -209,8 +208,7 @@ public struct StatusPopoverView: View {
                                             if isQuickSearchPresented && quickSearchTarget == .secondary {
                                                 toggleQuickSearch()
                                             } else {
-                                                quickSearchTarget = .secondary
-                                                if !isQuickSearchPresented { toggleQuickSearch() }
+                                                toggleQuickSearch(targeting: .secondary)
                                             }
                                         }
                                     )
@@ -350,31 +348,19 @@ public struct StatusPopoverView: View {
         }
     }
 
-    private func toggleQuickSearch() {
+    private func toggleQuickSearch(targeting slot: ClockSlot? = nil) {
         if isQuickSearchPresented {
             isQuickSearchPresented = false
             quickSearchText = ""
             return
         }
 
-        quickSearchTarget = defaultQuickSearchTarget
+        quickSearchTarget = slot ?? (visibleSlots == [.primary] ? .primary : .secondary)
         isQuickSearchPresented = true
 
         DispatchQueue.main.async {
             isQuickSearchFocused = true
         }
-    }
-
-    private var defaultQuickSearchTarget: ClockSlot {
-        if visibleSlots == [.primary] {
-            return .primary
-        }
-
-        if visibleSlots == [.secondary] {
-            return .secondary
-        }
-
-        return .secondary
     }
 
     private func applyQuickSearch(_ option: TimeZoneOption) {
