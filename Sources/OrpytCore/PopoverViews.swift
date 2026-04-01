@@ -16,7 +16,6 @@ public struct StatusPopoverView: View {
     public let onSwapTimeZones: () -> Void
     public let onQuit: () -> Void
     public let onContentHeightChange: (CGFloat) -> Void
-    @State private var activeEditorSlot: ClockSlot?
     @State private var isQuickSearchPresented = false
     @State private var quickSearchText = ""
     @State private var quickSearchTarget: ClockSlot = .secondary
@@ -59,12 +58,8 @@ public struct StatusPopoverView: View {
     private var preferredPopoverHeight: CGFloat {
         var height: CGFloat = settings.showPrimaryClock && settings.showSecondaryClock ? 455 : 420
 
-        if activeEditorSlot != nil {
-            height += 250
-        }
-
         if isQuickSearchPresented {
-            height += 188
+            height += 220
         }
 
         if settings.enableWeather {
@@ -124,6 +119,8 @@ public struct StatusPopoverView: View {
                                 PopoverQuickSearchView(
                                     searchText: $quickSearchText,
                                     targetSlot: $quickSearchTarget,
+                                    primaryCustomLabel: $settings.primaryCustomLabel,
+                                    secondaryCustomLabel: $settings.secondaryCustomLabel,
                                     availableSlots: visibleSlots,
                                     results: quickSearchResults,
                                     onSelect: applyQuickSearch(_:),
@@ -134,61 +131,38 @@ public struct StatusPopoverView: View {
 
                             HStack(spacing: 12) {
                                 if settings.showPrimaryClock {
-                                    Button {
-                                        toggleEditor(.primary)
-                                    } label: {
-                                        ClockCardView(
-                                            slot: .primary,
-                                            title: "Primary",
-                                            label: settings.displayLabel(
-                                                for: settings.primaryTimeZoneID,
-                                                customLabel: settings.primaryCustomLabel
-                                            ),
-                                            timeZoneID: settings.primaryTimeZoneID,
-                                            settings: settings,
-                                            weatherState: weatherStore.state(for: .primary),
-                                            date: displayedDate,
-                                            isEditing: activeEditorSlot == .primary,
-                                            palette: palette
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                                    ClockCardView(
+                                        slot: .primary,
+                                        title: "Primary",
+                                        label: settings.displayLabel(
+                                            for: settings.primaryTimeZoneID,
+                                            customLabel: settings.primaryCustomLabel
+                                        ),
+                                        timeZoneID: settings.primaryTimeZoneID,
+                                        settings: settings,
+                                        weatherState: weatherStore.state(for: .primary),
+                                        date: displayedDate,
+                                        isEditing: false,
+                                        palette: palette
+                                    )
                                 }
 
                                 if settings.showSecondaryClock {
-                                    Button {
-                                        toggleEditor(.secondary)
-                                    } label: {
-                                        ClockCardView(
-                                            slot: .secondary,
-                                            title: "Secondary",
-                                            label: settings.displayLabel(
-                                                for: settings.secondaryTimeZoneID,
-                                                customLabel: settings.secondaryCustomLabel
-                                            ),
-                                            timeZoneID: settings.secondaryTimeZoneID,
-                                            settings: settings,
-                                            weatherState: weatherStore.state(for: .secondary),
-                                            date: displayedDate,
-                                            isEditing: activeEditorSlot == .secondary,
-                                            palette: palette
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .orpytClickableHover(scale: 1.008, brightness: 0.012)
+                                    ClockCardView(
+                                        slot: .secondary,
+                                        title: "Secondary",
+                                        label: settings.displayLabel(
+                                            for: settings.secondaryTimeZoneID,
+                                            customLabel: settings.secondaryCustomLabel
+                                        ),
+                                        timeZoneID: settings.secondaryTimeZoneID,
+                                        settings: settings,
+                                        weatherState: weatherStore.state(for: .secondary),
+                                        date: displayedDate,
+                                        isEditing: false,
+                                        palette: palette
+                                    )
                                 }
-                            }
-
-                            if let activeEditorSlot {
-                                InlineTimeZoneEditorView(
-                                    title: activeEditorSlot == .primary ? "Edit Primary Clock" : "Edit Secondary Clock",
-                                    selectedTimeZoneID: selectedTimeZoneBinding(for: activeEditorSlot),
-                                    customLabel: customLabelBinding(for: activeEditorSlot),
-                                    searchText: searchBinding(for: activeEditorSlot),
-                                    onDone: { self.activeEditorSlot = nil }
-                                )
-                                .transition(.opacity.combined(with: .move(edge: .top)))
                             }
 
                             if settings.showCalendarEvents {
@@ -252,11 +226,6 @@ public struct StatusPopoverView: View {
                             scrollProxy.scrollTo("popoverTop", anchor: .top)
                         }
                     }
-                    .onChange(of: activeEditorSlot) { _ in
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            scrollProxy.scrollTo("popoverTop", anchor: .top)
-                        }
-                    }
                 }
             }
             .frame(width: 452)
@@ -272,7 +241,6 @@ public struct StatusPopoverView: View {
             .onDisappear {
                 // Reset all transient UI state when the popover closes.
                 // Persisted settings (time zone, labels, chip toggles) are NOT touched.
-                activeEditorSlot = nil
                 isQuickSearchPresented = false
                 quickSearchText = ""
                 primarySearchText = ""
@@ -296,10 +264,6 @@ public struct StatusPopoverView: View {
         }
     }
 
-    private func toggleEditor(_ slot: ClockSlot) {
-        isQuickSearchPresented = false
-        activeEditorSlot = activeEditorSlot == slot ? nil : slot
-    }
 
     private var headerContent: some View {
         Group {
@@ -386,7 +350,6 @@ public struct StatusPopoverView: View {
             return
         }
 
-        activeEditorSlot = nil
         quickSearchTarget = defaultQuickSearchTarget
         isQuickSearchPresented = true
 
@@ -445,41 +408,21 @@ public struct StatusPopoverView: View {
         }
     }
 
-    private func selectedTimeZoneBinding(for slot: ClockSlot) -> Binding<String> {
-        switch slot {
-        case .primary:
-            return $settings.primaryTimeZoneID
-        case .secondary:
-            return $settings.secondaryTimeZoneID
-        }
-    }
-
-    private func customLabelBinding(for slot: ClockSlot) -> Binding<String> {
-        switch slot {
-        case .primary:
-            return $settings.primaryCustomLabel
-        case .secondary:
-            return $settings.secondaryCustomLabel
-        }
-    }
-
-    private func searchBinding(for slot: ClockSlot) -> Binding<String> {
-        switch slot {
-        case .primary:
-            return $primarySearchText
-        case .secondary:
-            return $secondarySearchText
-        }
-    }
 }
 
 public struct PopoverQuickSearchView: View {
     @Binding public var searchText: String
     @Binding public var targetSlot: ClockSlot
+    @Binding public var primaryCustomLabel: String
+    @Binding public var secondaryCustomLabel: String
     public let availableSlots: [ClockSlot]
     public let results: [TimeZoneOption]
     public let onSelect: (TimeZoneOption) -> Void
     public let onUseCurrentTimeZone: () -> Void
+
+    private var customLabelBinding: Binding<String> {
+        targetSlot == .primary ? $primaryCustomLabel : $secondaryCustomLabel
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -506,6 +449,21 @@ public struct PopoverQuickSearchView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
+
+            // Custom label field
+            TextField("Custom name (optional)", text: customLabelBinding)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.10))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
+                )
 
             VStack(spacing: 0) {
                 ForEach(results) { option in

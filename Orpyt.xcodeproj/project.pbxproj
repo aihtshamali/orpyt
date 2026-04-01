@@ -216,7 +216,8 @@
 				DEVELOPMENT_TEAM = 95NDRZT8W5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Orpyt;
 				INFOPLIST_KEY_CFBundleIconFile = appstore.png;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -251,7 +252,8 @@
 				DEVELOPMENT_TEAM = 95NDRZT8W5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Orpyt;
 				INFOPLIST_KEY_CFBundleIconFile = appstore.png;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
