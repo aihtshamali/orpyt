@@ -755,23 +755,26 @@ public struct TimeScrollerStrip: View {
                     let fraction = Double(item.hour + 12) / 24.0
                     let xPos = totalWidth * fraction
                     let isAtCurrentHour = (timeShiftMinutes / 60 == item.hour && timeShiftMinutes % 60 == 0)
-                    VStack(spacing: 2) {
-                        Rectangle()
-                            .fill(isAtCurrentHour ? Color.primary.opacity(0.6) : Color.primary.opacity(0.18))
-                            .frame(width: isAtCurrentHour ? 1.5 : 1, height: isAtCurrentHour ? 6 : 4)
-                        Text(item.label)
-                            .font(.system(size: 9, weight: isAtCurrentHour ? .semibold : .regular))
-                            .foregroundStyle(isAtCurrentHour ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.7))
-                            .fixedSize()
-                    }
-                    .position(x: xPos, y: 12)
-                    .contentShape(Rectangle().size(CGSize(width: 36, height: 28)).offset(x: xPos - 18, y: 0))
-                    .onTapGesture {
+                    Button {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                             timeShiftMinutes = item.hour * 60
                         }
                         focusProxy.focus()
+                    } label: {
+                        VStack(spacing: 2) {
+                            Rectangle()
+                                .fill(isAtCurrentHour ? Color.primary.opacity(0.6) : Color.primary.opacity(0.18))
+                                .frame(width: isAtCurrentHour ? 1.5 : 1, height: isAtCurrentHour ? 6 : 4)
+                            Text(item.label)
+                                .font(.system(size: 9, weight: isAtCurrentHour ? .semibold : .regular))
+                                .foregroundStyle(isAtCurrentHour ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.7))
+                                .fixedSize()
+                        }
+                        .frame(width: 36, height: 24)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .position(x: xPos, y: 12)
                     .cursor(.pointingHand)
                 }
             }

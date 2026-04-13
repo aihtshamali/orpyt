@@ -263,6 +263,12 @@ APPLESCRIPT
   # Convert to compressed read-only final DMG.
   hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
   rm -f "$DMG_RW_PATH"
+
+  # Sign the DMG itself — required by Gatekeeper before notarization.
+  if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
+    codesign --force --sign "$APP_SIGN_IDENTITY" --timestamp "$DMG_PATH"
+    echo "Signed DMG: $DMG_PATH"
+  fi
   fi  # end SKIP_DMG check after ditto
 fi  # end outer SKIP_DMG check
 
