@@ -329,6 +329,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
+        reCheckCalendarIfNeeded()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
@@ -478,7 +479,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
 
     func reCheckCalendarIfNeeded() {
         guard settings.showCalendarEvents else { return }
-        Task { await calendarStore.enable(using: settings) }
+        Task { await calendarStore.syncAuthorization(using: settings) }
     }
 
     private func refreshCalendar(force: Bool) {

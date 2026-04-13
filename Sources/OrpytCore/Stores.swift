@@ -323,11 +323,25 @@ public final class CalendarStore: ObservableObject {
             return
         }
 
+        Task { await syncAuthorization(using: settings) }
+    }
+
+    public func syncAuthorization(using settings: ClockSettingsStore) async {
+        guard settings.showCalendarEvents else {
+            state = .disabled
+            return
+        }
+
+        // Recreate the store to pick up TCC changes made while Orpyt was running.
+        eventStore = EKEventStore()
         let authorization = authorizationStatus
+
         if isAuthorized(authorization) {
-            Task { await refresh(using: settings) }
+            await refresh(using: settings)
         } else if authorization == .notDetermined {
             state = .needsPermission
+        } else if #available(macOS 14.0, *), authorization == .writeOnly {
+            state = .failed("Calendar needs full access")
         } else {
             state = .failed("Calendar access is off")
         }
