@@ -141,9 +141,53 @@ if [[ "$ALLOW_UNSIGNED" != "1" ]]; then
     "$DIST_APP_PATH"
 fi
 
+# ── Notarise + staple helper (defined early so it can be used for app + pkg + dmg) ───
+
+notarize_and_staple() {
+  local artifact="$1"
+  local notary_json notary_id notary_status
+
+  notary_json=$(xcrun notarytool submit "$artifact" \
+    "${NOTARY_ARGS[@]}" --wait --output-format json 2>&1)
+  echo "$notary_json"
+
+  notary_id=$(echo "$notary_json" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
+  notary_status=$(echo "$notary_json" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || true)
+
+  if [[ "$notary_status" != "Accepted" ]]; then
+    echo "Notarization failed for $artifact (status: $notary_status)."
+    if [[ -n "$notary_id" ]]; then
+      echo "=== Notarization log ==="
+      xcrun notarytool log "$notary_id" "${NOTARY_ARGS[@]}" 2>&1 || true
+    fi
+    exit 1
+  fi
+
+  xcrun stapler staple "$artifact"
+}
+
 # ── ZIP ──────────────────────────────────────────────────────────────────────
 
 ditto -c -k --keepParent "$DIST_APP_PATH" "$ZIP_PATH"
+
+# ── Notarise + staple the .app bundle itself ──────────────────────────────────
+# This must happen BEFORE building the DMG so the app inside the DMG has a
+# stapled notarization ticket. Gatekeeper evaluates the .app directly when the
+# user mounts the DMG — stapling the DMG wrapper alone is not sufficient.
+# We submit the ZIP (notarytool requires an archive for .app bundles), then
+# staple the .app in-place so it is already stapled when copied into the DMG.
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+  notarize_and_staple "$ZIP_PATH"
+  xcrun stapler staple "$DIST_APP_PATH"
+elif [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_PASSWORD" ]]; then
+  NOTARY_ARGS=(--apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD")
+  notarize_and_staple "$ZIP_PATH"
+  xcrun stapler staple "$DIST_APP_PATH"
+fi
 
 # ── PKG — native macOS installer ─────────────────────────────────────────────
 
@@ -280,41 +324,11 @@ else
   echo "Code signature verification skipped or failed for $DIST_APP_PATH"
 fi
 
-# ── Notarise + staple ────────────────────────────────────────────────────────
+# ── Notarise + staple PKG and DMG ────────────────────────────────────────────
+# NOTARY_ARGS is already set above (when the .app was notarized).
+# If no notarization credentials were provided, skip gracefully.
 
-notarize_and_staple() {
-  local artifact="$1"
-  local notary_json notary_id notary_status
-
-  notary_json=$(xcrun notarytool submit "$artifact" \
-    "${NOTARY_ARGS[@]}" --wait --output-format json 2>&1)
-  echo "$notary_json"
-
-  notary_id=$(echo "$notary_json" \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
-  notary_status=$(echo "$notary_json" \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || true)
-
-  if [[ "$notary_status" != "Accepted" ]]; then
-    echo "Notarization failed for $artifact (status: $notary_status)."
-    if [[ -n "$notary_id" ]]; then
-      echo "=== Notarization log ==="
-      xcrun notarytool log "$notary_id" "${NOTARY_ARGS[@]}" 2>&1 || true
-    fi
-    exit 1
-  fi
-
-  xcrun stapler staple "$artifact"
-}
-
-if [[ -n "$NOTARY_PROFILE" ]]; then
-  NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
-  notarize_and_staple "$PKG_PATH"
-  if [[ "$SKIP_DMG" != "1" ]]; then
-    notarize_and_staple "$DMG_PATH"
-  fi
-elif [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_PASSWORD" ]]; then
-  NOTARY_ARGS=(--apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD")
+if [[ -n "$NOTARY_PROFILE" ]] || [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_PASSWORD" ]]; then
   notarize_and_staple "$PKG_PATH"
   if [[ "$SKIP_DMG" != "1" ]]; then
     notarize_and_staple "$DMG_PATH"
