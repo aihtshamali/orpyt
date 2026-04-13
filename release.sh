@@ -200,7 +200,7 @@ if [[ "$SKIP_DMG" != "1" ]]; then
 
   # Create an empty writable DMG of the right size, then copy files in after mounting.
   hdiutil create \
-    -fs HFS+ \
+    -fs APFS \
     -volname "$VOLUME_NAME" \
     -size "${DMG_SIZE_MB}m" \
     -ov \
