@@ -165,7 +165,14 @@ notarize_and_staple() {
     exit 1
   fi
 
-  xcrun stapler staple "$artifact"
+  case "$artifact" in
+    *.zip)
+      echo "Skipping stapler for ZIP archive: $artifact"
+      ;;
+    *)
+      xcrun stapler staple "$artifact"
+      ;;
+  esac
 }
 
 # ── ZIP ──────────────────────────────────────────────────────────────────────
