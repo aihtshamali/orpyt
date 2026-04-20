@@ -1041,6 +1041,30 @@ public struct MenuBarPane: View {
     @ObservedObject public var settings: ClockSettingsStore
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
 
+    private var iconMode: Binding<MenuBarIconMode> {
+        Binding(
+            get: {
+                if settings.showWeatherInMenuBar { return .weather }
+                if settings.showStatusIcon { return .ambient }
+                return .none
+            },
+            set: { newValue in
+                switch newValue {
+                case .none:
+                    settings.setMenuBarVisibility(icon: false, weather: false)
+                case .ambient:
+                    settings.setMenuBarVisibility(icon: true, weather: false)
+                case .weather:
+                    guard settings.enableWeather else {
+                        settings.setMenuBarVisibility(icon: false, weather: false)
+                        return
+                    }
+                    settings.setMenuBarVisibility(icon: false, weather: true)
+                }
+            }
+        )
+    }
+
     public var body: some View {
         Form {
             Section("Startup") {
@@ -1053,7 +1077,7 @@ public struct MenuBarPane: View {
                 }
             }
 
-            Section("Clocks") {
+            Section("Visibility") {
                 Toggle(isOn: $settings.showPrimaryClock) {
                     Text("Show primary clock")
                     Text("Keep the first city visible in the menu bar.")
@@ -1064,14 +1088,10 @@ public struct MenuBarPane: View {
                 }
             }
 
-            Section("Display") {
+            Section("Format") {
                 Toggle(isOn: $settings.showZoneLabelInMenuBar) {
                     Text("Show zone labels")
                     Text("Display short city labels beside the time.")
-                }
-                Toggle(isOn: $settings.showStatusIcon) {
-                    Text("Show ambient icon")
-                    Text("Use day or night iconography in the menu bar.")
                 }
                 Toggle(isOn: $settings.use24HourClock) {
                     Text("Use 24-hour time")
@@ -1082,9 +1102,44 @@ public struct MenuBarPane: View {
                     Text("Update the top bar every second.")
                 }
             }
+
+            Section("Icons") {
+                Picker("Menu bar icon mode", selection: iconMode) {
+                    ForEach(MenuBarIconMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+
+                if !settings.enableWeather {
+                    Text("Turn on live weather in the Weather pane to use weather icons in the menu bar.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Choose between no icon, ambient day/night icons, or live weather icons.")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .onAppear { launchAtLogin.refresh() }
+    }
+}
+
+private enum MenuBarIconMode: String, CaseIterable, Identifiable {
+    case none
+    case ambient
+    case weather
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none:
+            return "None"
+        case .ambient:
+            return "Ambient"
+        case .weather:
+            return "Weather"
+        }
     }
 }
 
@@ -1162,19 +1217,16 @@ public struct WeatherPane: View {
 
     public var body: some View {
         Form {
-            Section {
+            Section("Live Weather") {
                 Toggle(isOn: $settings.enableWeather) {
                     Text("Enable live weather")
                     Text("Attach live weather to each clock.")
                 }
+                Text("Weather follows each selected clock city automatically.")
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Display") {
-                Toggle(isOn: $settings.showWeatherInMenuBar) {
-                    Text("Use weather icons")
-                    Text("Switch the menu bar icon mode from ambient to weather.")
-                }
-                .disabled(!settings.enableWeather)
+            Section("Cards") {
                 Toggle(isOn: $settings.showWeatherLocation) {
                     Text("Show location in cards")
                     Text("Display the resolved city below the condition.")
@@ -1187,8 +1239,8 @@ public struct WeatherPane: View {
                 .disabled(!settings.enableWeather)
             }
 
-            Section {
-                Text("Weather follows each selected clock city automatically.")
+            Section("Menu Bar") {
+                Text("Menu bar icon mode now lives in the Menu Bar pane so all top-bar controls stay together.")
                     .foregroundStyle(.secondary)
             }
         }

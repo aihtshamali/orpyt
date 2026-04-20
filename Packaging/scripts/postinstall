@@ -1,20 +1,22 @@
 #!/bin/zsh
-# Launch Orpyt immediately after installation for the current user.
-# $USER is set by the installer to the installing user.
 
 APP="/Applications/Orpyt.app"
 
-if [[ -d "$APP" ]]; then
-    # Strip quarantine so Gatekeeper doesn't block the first launch.
-    # PKG installer runs as root so this always has permission.
-    /usr/bin/xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+if [[ ! -d "$APP" ]]; then
+    exit 0
+fi
 
-    # Use launchctl to open in the user's GUI session (works for PKG installs)
-    if [[ -n "$USER" ]]; then
-        uid=$(id -u "$USER" 2>/dev/null)
-        if [[ -n "$uid" ]]; then
-            launchctl asuser "$uid" open -a "$APP" &
-        fi
+# Strip quarantine so the first launch is clean after PKG install.
+/usr/bin/xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+
+# Installer runs as root, so $USER is not reliable. Resolve the active console user
+# and launch Orpyt into that GUI session.
+console_user=$(/usr/sbin/scutil <<< "show State:/Users/ConsoleUser" | /usr/bin/awk '/Name :/ && $3 != "loginwindow" { print $3 }' | /usr/bin/head -n 1)
+
+if [[ -n "$console_user" ]]; then
+    uid=$(/usr/bin/id -u "$console_user" 2>/dev/null)
+    if [[ -n "$uid" ]]; then
+        /bin/launchctl asuser "$uid" /usr/bin/open -gj -a "$APP" >/dev/null 2>&1 &
     fi
 fi
 

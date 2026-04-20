@@ -140,8 +140,6 @@ public enum ClockFormatter {
             switch weatherState {
             case let .loaded(snapshot):
                 parts.append("\(snapshot.temperatureText), \(snapshot.conditionText)")
-            case let .failed(message):
-                parts.append(message)
             default:
                 break
             }

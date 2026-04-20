@@ -744,20 +744,13 @@ public struct TimeScrollerStrip: View {
             )
             .frame(height: 18)
 
-            // Tick marks + labels — tappable to jump directly to that hour
-            GeometryReader { geo in
-                let totalWidth = geo.size.width
-                let labeledHours: [(hour: Int, label: String)] = [
-                    (-12, "-12h"), (-9, "-9h"), (-6, "-6h"), (-3, "-3h"),
-                    (0, "Now"), (3, "+3h"), (6, "+6h"), (9, "+9h"), (12, "+12h")
-                ]
-                ForEach(labeledHours, id: \.hour) { item in
-                    let fraction = Double(item.hour + 12) / 24.0
-                    let xPos = totalWidth * fraction
-                    let isAtCurrentHour = (timeShiftMinutes / 60 == item.hour && timeShiftMinutes % 60 == 0)
+            // Tick marks + labels — each label is a full-width tap target
+            HStack(alignment: .top, spacing: 0) {
+                ForEach([(-12, "-12h"), (-9, "-9h"), (-6, "-6h"), (-3, "-3h"), (0, "Now"), (3, "+3h"), (6, "+6h"), (9, "+9h"), (12, "+12h")], id: \.0) { item in
+                    let isAtCurrentHour = (timeShiftMinutes / 60 == item.0 && timeShiftMinutes % 60 == 0)
                     Button {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                            timeShiftMinutes = item.hour * 60
+                            timeShiftMinutes = item.0 * 60
                         }
                         focusProxy.focus()
                     } label: {
@@ -765,16 +758,15 @@ public struct TimeScrollerStrip: View {
                             Rectangle()
                                 .fill(isAtCurrentHour ? Color.primary.opacity(0.6) : Color.primary.opacity(0.18))
                                 .frame(width: isAtCurrentHour ? 1.5 : 1, height: isAtCurrentHour ? 6 : 4)
-                            Text(item.label)
+                            Text(item.1)
                                 .font(.system(size: 9, weight: isAtCurrentHour ? .semibold : .regular))
                                 .foregroundStyle(isAtCurrentHour ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.7))
-                                .fixedSize()
+                                .frame(maxWidth: .infinity)
                         }
-                        .frame(width: 36, height: 24)
+                        .frame(maxWidth: .infinity, minHeight: 24)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .position(x: xPos, y: 12)
                     .cursor(.pointingHand)
                 }
             }

@@ -3,8 +3,10 @@
 ## Highlights
 
 - Fixed calendar permission sync so Orpyt picks up Calendar access changes made in System Settings without getting stuck on the access prompt.
-- Next Meeting now updates correctly after the app becomes active again or when the popover is opened.
-- Continued polish across the native menu bar popover, settings, packaging, and release pipeline.
+- Time scroller labels are now directly clickable, so jumping to `+3h`, `Now`, or any labeled offset is immediate.
+- Reorganized settings so menu bar icon behavior is managed in one clear place, with weather display options kept in the Weather pane.
+- Installer postinstall now launches Orpyt automatically after installation for the logged-in user.
+- Cleaned the menu bar tooltip so transient weather failures do not show noisy “Weather unavailable” text on hover.
 
 ## Included In This Release
 
@@ -17,7 +19,8 @@
 1. Download `Orpyt.pkg`
 2. Open it with macOS Installer
 3. Follow the standard installation steps
-4. Launch Orpyt from Applications
+4. Orpyt launches automatically after install
+5. If needed, you can also open it later from Applications
 
 ## Notes
 
@@ -29,3 +32,5 @@
 
 - Existing users can install over the current version.
 - Calendar access does not need to be re-granted if it is already enabled in macOS Settings.
+- Time scroller interaction is now faster for keyboard-and-pointer users because labeled offsets are click targets.
+- Menu bar icon controls have moved into a more focused layout in Settings.
