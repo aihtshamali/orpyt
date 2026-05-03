@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BUNDLE_ID="com.orpyt.clocks"
+BUNDLE_ID="com.orpyt.app"
 APP="/Applications/Orpyt.app"
 
 echo "=== Orpyt Uninstaller ==="

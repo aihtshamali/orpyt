@@ -11,8 +11,9 @@ public struct StatusPopoverView: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
     public let appearanceMode: AppearanceMode
-    public let onOpenSettings: () -> Void
+    public let onOpenSettings: (SettingsPane?) -> Void
     public let onSwapTimeZones: () -> Void
     public let onQuit: () -> Void
     public let onContentHeightChange: (CGFloat) -> Void
@@ -35,8 +36,9 @@ public struct StatusPopoverView: View {
         settings: ClockSettingsStore,
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
+        subscriptionStore: SubscriptionStore,
         appearanceMode: AppearanceMode,
-        onOpenSettings: @escaping () -> Void,
+        onOpenSettings: @escaping (SettingsPane?) -> Void,
         onSwapTimeZones: @escaping () -> Void,
         onQuit: @escaping () -> Void,
         onContentHeightChange: @escaping (CGFloat) -> Void
@@ -44,6 +46,7 @@ public struct StatusPopoverView: View {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.subscriptionStore = subscriptionStore
         self.appearanceMode = appearanceMode
         self.onOpenSettings = onOpenSettings
         self.onSwapTimeZones = onSwapTimeZones
@@ -62,16 +65,20 @@ public struct StatusPopoverView: View {
             height += 220
         }
 
-        if settings.enableWeather {
+        if settings.effectiveWeatherEnabled {
             height += 36
         }
 
-        if settings.enableWeather, weatherStore.attribution != nil {
+        if settings.effectiveWeatherEnabled, weatherStore.attribution != nil {
             height += 18
         }
 
-        if settings.showCalendarEvents {
+        if settings.effectiveCalendarEnabled || subscriptionStore.shouldShowUpgradeActions {
             height += 82
+        }
+
+        if WelcomePeriodStore.shared.shouldShowPopoverReminder {
+            height += 36
         }
 
         height += 86
@@ -79,8 +86,10 @@ public struct StatusPopoverView: View {
         return height
     }
 
+    private var updateInterval: Double { settings.showSeconds ? 1 : 60 }
+
     public var body: some View {
-        TimelineView(.periodic(from: .now, by: settings.showSeconds ? 1 : 60)) { (context: TimelineViewDefaultContext) in
+        TimelineView(.periodic(from: .now, by: updateInterval)) { (context: TimelineViewDefaultContext) in
             let displayedDate = context.date.addingTimeInterval(TimeInterval(timeShiftMinutes * 60))
             ZStack(alignment: .topLeading) {
                 PopoverBackdrop(palette: palette)
@@ -112,7 +121,7 @@ public struct StatusPopoverView: View {
                                     .help(isQuickSearchPresented ? "Close search" : "Search cities")
                                     CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
                                         .help("Swap clocks")
-                                    CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: onOpenSettings)
+                                    CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: { onOpenSettings(nil) })
                                         .help("Open settings")
                                     CompactGlassButton(symbol: "power", palette: palette) {
                                         onQuit()
@@ -215,7 +224,7 @@ public struct StatusPopoverView: View {
                                 }
                             }
 
-                            if settings.showCalendarEvents {
+                            if settings.effectiveCalendarEnabled {
                                 NextMeetingSnippetView(
                                     state: calendarStore.state,
                                     now: context.date,
@@ -236,6 +245,15 @@ public struct StatusPopoverView: View {
                                         }
                                     }
                                 )
+                            } else if subscriptionStore.shouldShowUpgradeActions && !subscriptionStore.hasAccess(to: .calendar) {
+                                PopoverProLockedCard(
+                                    feature: .calendar,
+                                    title: "Unlock Calendar Context",
+                                    subtitle: "Show your next meeting in the popover with Orpyt Pro."
+                                ) {
+                                    subscriptionStore.focus(on: .calendar)
+                                    onOpenSettings(nil)
+                                }
                             }
 
                             LazyVGrid(columns: [
@@ -257,19 +275,36 @@ public struct StatusPopoverView: View {
                                 )
                             }
 
-                            TimeScrollerStrip(
-                                timeShiftMinutes: $timeShiftMinutes,
-                                palette: palette,
-                                isMuted: $settings.muteScrollerSound,
-                                now: context.date
-                            )
+                            if subscriptionStore.hasAccess(to: .timeScroller) {
+                                TimeScrollerStrip(
+                                    timeShiftMinutes: $timeShiftMinutes,
+                                    palette: palette,
+                                    isMuted: $settings.muteScrollerSound,
+                                    now: context.date
+                                )
+                            } else {
+                                PopoverProLockedCard(
+                                    feature: .timeScroller,
+                                    title: "Unlock Time Scroller",
+                                    subtitle: "Preview hours ahead or behind across both clocks with Orpyt Pro."
+                                ) {
+                                    subscriptionStore.focus(on: .timeScroller)
+                                    onOpenSettings(nil)
+                                }
+                            }
 
-                            if settings.enableWeather, let attribution = weatherStore.attribution {
+                            if settings.effectiveWeatherEnabled, let attribution = weatherStore.attribution {
                                 WeatherAttributionFooterView(attribution: attribution)
                             }
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                        PopoverProReminderFooter(
+                            welcomeStore: WelcomePeriodStore.shared,
+                            subscriptionStore: subscriptionStore,
+                            onOpenSettings: { onOpenSettings(nil) }
+                        )
                     }
                     .onChange(of: isQuickSearchPresented) { _ in
                         withAnimation(.easeInOut(duration: 0.18)) {
@@ -350,6 +385,14 @@ public struct StatusPopoverView: View {
 
     private func toggleQuickSearch(targeting slot: ClockSlot? = nil) {
         if isQuickSearchPresented {
+            if let slot, slot != quickSearchTarget {
+                // Different card tapped — switch target, clear text, keep search open
+                quickSearchTarget = slot
+                quickSearchText = ""
+                DispatchQueue.main.async { isQuickSearchFocused = true }
+                return
+            }
+            // Same card tapped or no target — close
             isQuickSearchPresented = false
             quickSearchText = ""
             return
@@ -509,6 +552,117 @@ public struct PopoverQuickSearchView: View {
             return "Primary"
         case .secondary:
             return "Secondary"
+        }
+    }
+}
+
+public struct PopoverProLockedCard: View {
+    public let feature: OrpytProFeature
+    public let title: String
+    public let subtitle: String
+    public let action: () -> Void
+
+    public var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: feature.symbolName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.14))
+                    )
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Orpyt Pro")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.16),
+                                Color.white.opacity(0.20),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.28), lineWidth: 1.0)
+            )
+            .shadow(color: Color.accentColor.opacity(0.10), radius: 12, x: 0, y: 7)
+        }
+        .buttonStyle(.plain)
+        .orpytClickableHover(scale: 1.012, brightness: 0.014)
+    }
+}
+
+public struct PopoverProReminderFooter: View {
+    @ObservedObject public var welcomeStore: WelcomePeriodStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    public let onOpenSettings: () -> Void
+
+    private var reminderColor: Color {
+        switch welcomeStore.popoverReminderColor {
+        case .red: return .red
+        case .orange: return .orange
+        case .warning: return Color(hex: "#E6A817")
+        case .accent: return Color.accentColor
+        }
+    }
+
+    public var body: some View {
+        if welcomeStore.shouldShowPopoverReminder {
+            Button(action: {
+                subscriptionStore.showProSheet = true
+                onOpenSettings()
+            }) {
+                HStack(spacing: 8) {
+                    Text(welcomeStore.popoverReminderText)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(reminderColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let pill = welcomeStore.popoverReminderPillText {
+                        Text(pill)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(reminderColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule().fill(reminderColor.opacity(0.14))
+                            )
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(reminderColor.opacity(0.07))
+            }
+            .buttonStyle(.plain)
         }
     }
 }

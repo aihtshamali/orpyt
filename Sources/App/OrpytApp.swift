@@ -4,13 +4,14 @@ import CoreLocation
 import EventKit
 import Security
 import ServiceManagement
-import Sparkle
 import SwiftUI
 import WeatherKit
 
-#if canImport(OrpytCore)
-import OrpytCore
+#if DIRECT_DISTRIBUTION
+import Sparkle
 #endif
+
+import OrpytCore
 
 @main
 struct OrpytApp: App {
@@ -26,18 +27,24 @@ struct OrpytApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusBarController?
+    private let subscriptionStore = SubscriptionStore.shared
+    #if DIRECT_DISTRIBUTION
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
         userDriverDelegate: nil
     )
+    #endif
 
     func checkForUpdates() {
+        #if DIRECT_DISTRIBUTION
         updaterController.checkForUpdates(nil)
+        #endif
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         statusController?.reCheckCalendarIfNeeded()
+        WelcomePeriodStore.shared.refresh()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -48,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = ClockSettingsStore.shared
         let weatherStore = WeatherStore.shared
         let calendarStore = CalendarStore.shared
+        subscriptionStore.prepareForLaunch()
+        WelcomePeriodStore.shared.refresh()
         let shouldOpenSettingsOnLaunch = settings.performInitialSetupIfNeeded()
         _ = LaunchAtLoginManager.shared
         calendarStore.prepareForLaunch(using: settings)
@@ -55,12 +64,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
+            subscriptionStore: subscriptionStore,
             onCheckForUpdates: { [weak self] in self?.checkForUpdates() }
         )
         statusController = StatusBarController(
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
+            subscriptionStore: subscriptionStore,
             settingsWindowController: settingsWindowController
         )
 
@@ -90,6 +101,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     private let settings: ClockSettingsStore
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
+    private let subscriptionStore: SubscriptionStore
     private let settingsWindowController: SettingsWindowController
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
@@ -106,11 +118,13 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         settings: ClockSettingsStore,
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
+        subscriptionStore: SubscriptionStore,
         settingsWindowController: SettingsWindowController
     ) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.subscriptionStore = subscriptionStore
         self.settingsWindowController = settingsWindowController
         super.init()
         configureStatusItem()
@@ -298,6 +312,16 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.updateDisplay()
             }
             .store(in: &cancellables)
+
+        subscriptionStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateDisplay()
+                self?.refreshPopoverContent()
+                self?.refreshWeather(force: true)
+                self?.refreshCalendar(force: true)
+            }
+            .store(in: &cancellables)
     }
 
     private func startTimer() {
@@ -367,13 +391,13 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         statusItem.button?.imagePosition = .noImage
     }
 
-    private func openSettings() {
+    private func openSettings(pane: SettingsPane? = nil) {
         popover.performClose(nil)
-        settingsWindowController.show()
+        settingsWindowController.show(pane: pane)
     }
 
     private func refreshPopoverContent() {
-        switch settings.appearanceMode {
+        switch settings.effectiveAppearanceMode {
         case .system:
             popover.appearance = nil
         case .light:
@@ -386,8 +410,9 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
-            appearanceMode: settings.appearanceMode,
-            onOpenSettings: { [weak self] in self?.openSettings() },
+            subscriptionStore: subscriptionStore,
+            appearanceMode: settings.effectiveAppearanceMode,
+            onOpenSettings: { [weak self] pane in self?.openSettings(pane: pane) },
             onSwapTimeZones: { [weak self, weak settings] in
                 settings?.swapTimeZones()
                 self?.weatherStore.swapClockStates()
@@ -398,7 +423,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             }
         )
 
-        switch settings.appearanceMode {
+        switch settings.effectiveAppearanceMode {
         case .system:
             popoverHostingController.rootView = AnyView(baseView)
         case .light, .dark:
@@ -450,6 +475,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
+        guard subscriptionStore.hasAccess(to: .weather) else {
+            weatherStore.disable()
+            return
+        }
+
         let refreshInterval: TimeInterval = Metrics.weatherRefreshInterval
         let now = Date()
 
@@ -468,7 +498,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] isEnabled in
                 guard let self else { return }
-                if isEnabled {
+                if isEnabled, self.subscriptionStore.hasAccess(to: .calendar) {
                     Task { await self.calendarStore.enable(using: self.settings) }
                 } else {
                     self.calendarStore.disable()
@@ -478,12 +508,17 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     func reCheckCalendarIfNeeded() {
-        guard settings.showCalendarEvents else { return }
+        guard settings.showCalendarEvents, subscriptionStore.hasAccess(to: .calendar) else { return }
         Task { await calendarStore.syncAuthorization(using: settings) }
     }
 
     private func refreshCalendar(force: Bool) {
         guard settings.showCalendarEvents else {
+            calendarStore.disable()
+            return
+        }
+
+        guard subscriptionStore.hasAccess(to: .calendar) else {
             calendarStore.disable()
             return
         }
@@ -508,13 +543,16 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     private let settings: ClockSettingsStore
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
+    private let subscriptionStore: SubscriptionStore
+    private let navigationStore = SettingsNavigationStore()
     private let hostingController: NSHostingController<AnyView>
     private let onCheckForUpdates: () -> Void
 
-    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, onCheckForUpdates: @escaping () -> Void) {
+    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, subscriptionStore: SubscriptionStore, onCheckForUpdates: @escaping () -> Void) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.subscriptionStore = subscriptionStore
         self.onCheckForUpdates = onCheckForUpdates
         hostingController = NSHostingController(rootView: AnyView(EmptyView()))
         let window = OrpytSettingsWindow(contentViewController: hostingController)
@@ -542,8 +580,12 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show() {
+    func show(pane: SettingsPane? = nil) {
         guard let window else { return }
+
+        if let pane {
+            navigationStore.selectedPane = pane
+        }
 
         if !didCenterWindow {
             window.center()
@@ -562,7 +604,7 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     }
 
     func refreshAppearance() {
-        switch settings.appearanceMode {
+        switch settings.effectiveAppearanceMode {
         case .system:
             window?.appearance = nil
         case .light:
@@ -574,8 +616,15 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     }
 
     private func refreshSettingsView() {
-        let view = SettingsView(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, onCheckForUpdates: onCheckForUpdates)
-        switch settings.appearanceMode {
+        let view = SettingsView(
+            settings: settings,
+            weatherStore: weatherStore,
+            calendarStore: calendarStore,
+            subscriptionStore: subscriptionStore,
+            navigationStore: navigationStore,
+            onCheckForUpdates: onCheckForUpdates
+        )
+        switch settings.effectiveAppearanceMode {
         case .system:
             hostingController.rootView = AnyView(view)
         case .light, .dark:

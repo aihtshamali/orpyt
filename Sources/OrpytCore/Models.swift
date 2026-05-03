@@ -55,12 +55,12 @@ public struct WeatherRefreshConfiguration {
 
     @MainActor
     public init(settings: ClockSettingsStore) {
-        enableWeather = settings.enableWeather
+        enableWeather = settings.effectiveWeatherEnabled
         showPrimaryClock = settings.showPrimaryClock
         showSecondaryClock = settings.showSecondaryClock
         primaryTimeZoneID = settings.primaryTimeZoneID
         secondaryTimeZoneID = settings.secondaryTimeZoneID
-        primaryQuery = ""
-        secondaryQuery = ""
+        primaryQuery = settings.primaryWeatherLocation
+        secondaryQuery = settings.secondaryWeatherLocation
     }
 }

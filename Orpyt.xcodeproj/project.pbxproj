@@ -7,10 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A0SP000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A0SP000000000000000000002 /* Sparkle */; };
 		A00000000000000000000011 /* OrpytApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* OrpytApp.swift */; };
 		A00000000000000000000012 /* Assets/logo.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* Assets/logo.png */; };
-		A00000000000000000000014 /* Assets/appstore.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* Assets/appstore.png */; };
 		A00000000000000000000015 /* ClockCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* ClockCardViews.swift */; };
 		A00000000000000000000016 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* Models.swift */; };
 		A00000000000000000000017 /* PopoverViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* PopoverViews.swift */; };
@@ -18,21 +16,26 @@
 		A00000000000000000000019 /* Stores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* Stores.swift */; };
 		A0000000000000000000001A /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000C /* Utilities.swift */; };
 		A0000000000000000000001B /* WeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000D /* WeatherStore.swift */; };
-		A0000000000000000000001C /* Assets/Orpyt.icns in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* Assets/Orpyt.icns */; };
 		A0T000000000000000000001 /* ClockFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000011 /* ClockFormatterTests.swift */; };
 		A0T000000000000000000002 /* ClockSettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000012 /* ClockSettingsStoreTests.swift */; };
 		A0T000000000000000000003 /* TimeZoneCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000013 /* TimeZoneCatalogTests.swift */; };
 		A0T000000000000000000004 /* TimeScrollerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000014 /* TimeScrollerTests.swift */; };
 		A0T000000000000000000005 /* TimeZoneSearchProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000015 /* TimeZoneSearchProviderTests.swift */; };
-		A0T000000000000000000031 /* Sparkle in Frameworks (Tests) */ = {isa = PBXBuildFile; productRef = A0T000000000000000000030 /* Sparkle (Tests) */; };
-		A0T000000000000000000021 /* ClockCardViews.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* ClockCardViews.swift */; };
-		A0T000000000000000000022 /* Models.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* Models.swift */; };
-		A0T000000000000000000023 /* PopoverViews.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* PopoverViews.swift */; };
-		A0T000000000000000000024 /* SettingsViews.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* SettingsViews.swift */; };
-		A0T000000000000000000025 /* Stores.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* Stores.swift */; };
-		A0T000000000000000000026 /* Utilities.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000C /* Utilities.swift */; };
-		A0T000000000000000000027 /* WeatherStore.swift in TestSources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000D /* WeatherStore.swift */; };
+		A0U000000000000000000001 /* SubscriptionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0U000000000000000000011 /* SubscriptionStore.swift */; };
+		A0U000000000000000000002 /* SubscriptionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0U000000000000000000012 /* SubscriptionStoreTests.swift */; };
+		A0W000000000000000000001 /* WelcomePeriodStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0W000000000000000000011 /* WelcomePeriodStore.swift */; };
+		A0X000000000000000000001 /* Assets/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0X000000000000000000011 /* Assets/Assets.xcassets */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A0T000000000000000000071 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000042 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000041;
+			remoteInfo = Orpyt;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A00000000000000000000001 /* OrpytApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrpytApp.swift; sourceTree = "<group>"; };
@@ -40,7 +43,6 @@
 		A00000000000000000000003 /* Orpyt.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Orpyt.entitlements; sourceTree = "<group>"; };
 		A00000000000000000000004 /* Assets/logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Assets/logo.png; sourceTree = "<group>"; };
 		A00000000000000000000005 /* Assets/desktop-orpyt.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Assets/desktop-orpyt.png"; sourceTree = "<group>"; };
-		A00000000000000000000006 /* Assets/appstore.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Assets/appstore.png; sourceTree = "<group>"; };
 		A00000000000000000000007 /* ClockCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockCardViews.swift; sourceTree = "<group>"; };
 		A00000000000000000000008 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* PopoverViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverViews.swift; sourceTree = "<group>"; };
@@ -55,6 +57,12 @@
 		A0T000000000000000000013 /* TimeZoneCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeZoneCatalogTests.swift; sourceTree = "<group>"; };
 		A0T000000000000000000014 /* TimeScrollerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeScrollerTests.swift; sourceTree = "<group>"; };
 		A0T000000000000000000015 /* TimeZoneSearchProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeZoneSearchProviderTests.swift; sourceTree = "<group>"; };
+		A0U000000000000000000010 /* OrpytAppStore.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OrpytAppStore.entitlements; sourceTree = "<group>"; };
+		A0U000000000000000000011 /* SubscriptionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStore.swift; sourceTree = "<group>"; };
+		A0U000000000000000000012 /* SubscriptionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreTests.swift; sourceTree = "<group>"; };
+		A0W000000000000000000011 /* WelcomePeriodStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomePeriodStore.swift; sourceTree = "<group>"; };
+		A0X000000000000000000011 /* Assets/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets/Assets.xcassets; sourceTree = "<group>"; };
+		A0Y000000000000000000011 /* Orpyt.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Orpyt.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,15 +70,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0SP000000000000000000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A0T00000000000000000002F /* Frameworks (Tests) */ = {
+		A0T00000000000000000002F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0T000000000000000000031 /* Sparkle in Frameworks (Tests) */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +88,7 @@
 			children = (
 				A00000000000000000000032,
 				A00000000000000000000033 /* Products */,
+				DBAE5A282F9E9AF40097B086 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -89,8 +96,10 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000035 /* Sources */,
-				A0T000000000000000000080 /* Tests */,
+				A0T000000000000000000080 /* Tests/OrpytTests */,
 				A00000000000000000000003 /* Orpyt.entitlements */,
+				A0U000000000000000000010 /* OrpytAppStore.entitlements */,
+				A0Y000000000000000000011 /* Orpyt.storekit */,
 				A00000000000000000000034,
 			);
 			sourceTree = "<group>";
@@ -104,24 +113,12 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A0T000000000000000000080 /* Tests */ = {
-			isa = PBXGroup;
-			children = (
-				A0T000000000000000000011 /* ClockFormatterTests.swift */,
-				A0T000000000000000000012 /* ClockSettingsStoreTests.swift */,
-				A0T000000000000000000013 /* TimeZoneCatalogTests.swift */,
-				A0T000000000000000000014 /* TimeScrollerTests.swift */,
-				A0T000000000000000000015 /* TimeZoneSearchProviderTests.swift */,
-			);
-			path = Tests/OrpytTests;
-			sourceTree = "<group>";
-		};
 		A00000000000000000000034 = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000006 /* Assets/appstore.png */,
 				A00000000000000000000005 /* Assets/desktop-orpyt.png */,
 				A00000000000000000000004 /* Assets/logo.png */,
+				A0X000000000000000000011 /* Assets/Assets.xcassets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -150,10 +147,33 @@
 				A00000000000000000000009 /* PopoverViews.swift */,
 				A0000000000000000000000A /* SettingsViews.swift */,
 				A0000000000000000000000B /* Stores.swift */,
+				A0U000000000000000000011 /* SubscriptionStore.swift */,
 				A0000000000000000000000C /* Utilities.swift */,
+				A0W000000000000000000011 /* WelcomePeriodStore.swift */,
 				A0000000000000000000000D /* WeatherStore.swift */,
 			);
 			path = OrpytCore;
+			sourceTree = "<group>";
+		};
+		A0T000000000000000000080 /* Tests/OrpytTests */ = {
+			isa = PBXGroup;
+			children = (
+				A0T000000000000000000011 /* ClockFormatterTests.swift */,
+				A0T000000000000000000012 /* ClockSettingsStoreTests.swift */,
+				A0T000000000000000000013 /* TimeZoneCatalogTests.swift */,
+				A0T000000000000000000014 /* TimeScrollerTests.swift */,
+				A0T000000000000000000015 /* TimeZoneSearchProviderTests.swift */,
+				A0U000000000000000000012 /* SubscriptionStoreTests.swift */,
+			);
+			path = Tests/OrpytTests;
+			sourceTree = "<group>";
+		};
+		DBAE5A282F9E9AF40097B086 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001D /* Assets/Orpyt.icns */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -173,7 +193,6 @@
 			);
 			name = Orpyt;
 			packageProductDependencies = (
-				A0SP000000000000000000002 /* Sparkle */,
 			);
 			productName = Orpyt;
 			productReference = A00000000000000000000002 /* Orpyt.app */;
@@ -183,8 +202,8 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A0T00000000000000000005F /* Build configuration list for PBXNativeTarget "OrpytTests" */;
 			buildPhases = (
-				A0T00000000000000000003F /* Sources (Tests) */,
-				A0T00000000000000000002F /* Frameworks (Tests) */,
+				A0T00000000000000000003F /* Sources */,
+				A0T00000000000000000002F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -193,31 +212,12 @@
 			);
 			name = OrpytTests;
 			packageProductDependencies = (
-				A0T000000000000000000030 /* Sparkle */,
 			);
 			productName = OrpytTests;
 			productReference = A0T000000000000000000010 /* OrpytTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXTargetDependency section */
-		A0T000000000000000000070 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A00000000000000000000041 /* Orpyt */;
-			targetProxy = A0T000000000000000000071 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
-/* Begin PBXContainerItemProxy section */
-		A0T000000000000000000071 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A00000000000000000000042 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A00000000000000000000041;
-			remoteInfo = Orpyt;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXProject section */
 		A00000000000000000000042 /* Project object */ = {
@@ -244,10 +244,9 @@
 				Base,
 			);
 			mainGroup = A00000000000000000000031;
-			productRefGroup = A00000000000000000000033 /* Products */;
 			packageReferences = (
-				A0SP000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
+			productRefGroup = A00000000000000000000033 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -262,14 +261,12 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A00000000000000000000014 /* Assets/appstore.png in Resources */,
 				A00000000000000000000012 /* Assets/logo.png in Resources */,
-				A0000000000000000000001C /* Assets/Orpyt.icns in Resources */,
+				A0X000000000000000000001 /* Assets/Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
 
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000022 /* Sources */ = {
@@ -282,12 +279,14 @@
 				A00000000000000000000017 /* PopoverViews.swift in Sources */,
 				A00000000000000000000018 /* SettingsViews.swift in Sources */,
 				A00000000000000000000019 /* Stores.swift in Sources */,
+				A0U000000000000000000001 /* SubscriptionStore.swift in Sources */,
 				A0000000000000000000001A /* Utilities.swift in Sources */,
+				A0W000000000000000000001 /* WelcomePeriodStore.swift in Sources */,
 				A0000000000000000000001B /* WeatherStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A0T00000000000000000003F /* Sources (Tests) */ = {
+		A0T00000000000000000003F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -296,25 +295,45 @@
 				A0T000000000000000000003 /* TimeZoneCatalogTests.swift in Sources */,
 				A0T000000000000000000004 /* TimeScrollerTests.swift in Sources */,
 				A0T000000000000000000005 /* TimeZoneSearchProviderTests.swift in Sources */,
+				A0U000000000000000000002 /* SubscriptionStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A0T000000000000000000070 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000041 /* Orpyt */;
+			targetProxy = A0T000000000000000000071 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		A00000000000000000000061 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ENABLE_TESTABILITY = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Orpyt.entitlements;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = OrpytAppStore.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
-				ENABLE_APP_SANDBOX = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "3rd Party Mac Developer Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 11;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 6Y48ZAP972;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Orpyt;
@@ -323,18 +342,25 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Orpyt reads your upcoming events so it can show your next meeting in the popover.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				INFOPLIST_KEY_SUFeedURL = "https://aihtshamali.github.io/orpyt/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=";
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.13;
-				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.clocks;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app;
 				PRODUCT_MODULE_NAME = OrpytCore;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "Orpyt Mac App Store - Distribution";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -343,15 +369,27 @@
 		A00000000000000000000062 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Orpyt.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
-				ENABLE_APP_SANDBOX = NO;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = OrpytAppStore.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "3rd Party Mac Developer Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 11;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 6Y48ZAP972;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Orpyt;
@@ -360,15 +398,23 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Orpyt reads your upcoming events so it can show your next meeting in the popover.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				INFOPLIST_KEY_SUFeedURL = "https://aihtshamali.github.io/orpyt/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=";
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.13;
-				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.clocks;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app;
+				PRODUCT_MODULE_NAME = OrpytCore;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "Orpyt Mac App Store - Distribution";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -379,7 +425,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
+				DEVELOPMENT_TEAM = 6Y48ZAP972;
 				SWIFT_USE_INTEGRATED_DRIVER = NO;
 			};
 			name = Debug;
@@ -388,22 +434,25 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
+				DEVELOPMENT_TEAM = 6Y48ZAP972;
 				SWIFT_USE_INTEGRATED_DRIVER = NO;
 			};
 			name = Release;
 		};
-		A0T000000000000000000091 /* Debug (Tests) */ = {
+		A0T000000000000000000091 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
+				DEVELOPMENT_TEAM = 6Y48ZAP972;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.clocks.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
@@ -411,17 +460,20 @@
 			};
 			name = Debug;
 		};
-		A0T000000000000000000092 /* Release (Tests) */ = {
+		A0T000000000000000000092 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 95NDRZT8W5;
+				DEVELOPMENT_TEAM = 6Y48ZAP972;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.clocks.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
@@ -453,42 +505,13 @@
 		A0T00000000000000000005F /* Build configuration list for PBXNativeTarget "OrpytTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A0T000000000000000000091 /* Debug (Tests) */,
-				A0T000000000000000000092 /* Release (Tests) */,
+				A0T000000000000000000091 /* Debug */,
+				A0T000000000000000000092 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		A0SP000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		A0SP000000000000000000002 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A0SP000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-		A0SP000000000000000000006 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A0SP000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-		A0T000000000000000000030 /* Sparkle (Tests) */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A0SP000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A00000000000000000000042 /* Project object */;
 }

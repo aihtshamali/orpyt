@@ -4,13 +4,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Orpyt"
-PROJECT_PATH="$ROOT_DIR/Orpyt.xcodeproj"
-SCHEME_NAME="Orpyt"
 CONFIGURATION="${ORPYT_CONFIGURATION:-Release}"
+RELEASE_CHANNEL="${ORPYT_RELEASE_CHANNEL:-direct}"
 
 BUILD_ROOT="$ROOT_DIR/build/release"
 DERIVED_DATA_PATH="$BUILD_ROOT/DerivedData"
-ARCHIVE_PATH="$BUILD_ROOT/$APP_NAME.xcarchive"
 DMG_STAGING_DIR="$BUILD_ROOT/dmg"
 DMG_RW_PATH="$BUILD_ROOT/$APP_NAME-rw.dmg"
 DMG_BACKGROUND_DIR="$DMG_STAGING_DIR/.background"
@@ -21,7 +19,7 @@ PKG_RESOURCES_DIR="$PKG_BUILD_DIR/resources"
 PKG_DISTRIBUTION_PATH="$PKG_BUILD_DIR/distribution.xml"
 
 DIST_DIR="$ROOT_DIR/dist/release"
-APP_PATH_IN_ARCHIVE="$ARCHIVE_PATH/Products/Applications/$APP_NAME.app"
+SOURCE_APP_PATH="$ROOT_DIR/dist/$APP_NAME.app"
 DIST_APP_PATH="$DIST_DIR/$APP_NAME.app"
 ZIP_PATH="$DIST_DIR/$APP_NAME.zip"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
@@ -29,7 +27,7 @@ PKG_PATH="$DIST_DIR/$APP_NAME.pkg"
 
 ICNS_PATH="$ROOT_DIR/Assets/Orpyt.icns"
 ASSETS_DIR="$ROOT_DIR/Assets"
-PKG_IDENTIFIER="com.orpyt.clocks.pkg"
+PKG_IDENTIFIER="com.orpyt.app.pkg"
 MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT_DIR/Info.plist" 2>/dev/null || echo "1.0")"
 
 ALLOW_UNSIGNED="${ORPYT_ALLOW_UNSIGNED:-0}"
@@ -51,35 +49,29 @@ DMG_APPS_X=530
 DMG_APPS_Y=235
 
 mkdir -p "$BUILD_ROOT" "$DIST_DIR"
-rm -rf "$ARCHIVE_PATH" "$DERIVED_DATA_PATH" "$DMG_STAGING_DIR" "$DIST_APP_PATH" "$PKG_BUILD_DIR"
+rm -rf "$DERIVED_DATA_PATH" "$DMG_STAGING_DIR" "$DIST_APP_PATH" "$PKG_BUILD_DIR"
 rm -f "$ZIP_PATH" "$DMG_PATH" "$DMG_RW_PATH" "$PKG_PATH"
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
-XCODEBUILD_ARGS=(
-  -project "$PROJECT_PATH"
-  -scheme "$SCHEME_NAME"
-  -configuration "$CONFIGURATION"
-  -destination "generic/platform=macOS"
-  -derivedDataPath "$DERIVED_DATA_PATH"
-  -archivePath "$ARCHIVE_PATH"
-  ENABLE_HARDENED_RUNTIME=YES
-  CODE_SIGNING_ALLOWED=NO
-  CODE_SIGNING_REQUIRED=NO
-  CODE_SIGN_IDENTITY=""
-  archive
-)
+if [[ "$RELEASE_CHANNEL" == "direct" ]]; then
+  ORPYT_BUILD_CONFIGURATION=release "$ROOT_DIR/build-app.sh" >/dev/null
+elif [[ "$RELEASE_CHANNEL" == "appstore" ]]; then
+  echo "App Store release packaging is handled from Xcode Organizer. Use the Orpyt Xcode project and App Store Connect for that channel." >&2
+  exit 1
+else
+  echo "Unknown ORPYT_RELEASE_CHANNEL: $RELEASE_CHANNEL" >&2
+  exit 1
+fi
 
-xcodebuild "${XCODEBUILD_ARGS[@]}"
-
-if [[ ! -d "$APP_PATH_IN_ARCHIVE" ]]; then
-  echo "Archive did not produce $APP_PATH_IN_ARCHIVE" >&2
+if [[ ! -d "$SOURCE_APP_PATH" ]]; then
+  echo "Build did not produce $SOURCE_APP_PATH" >&2
   exit 1
 fi
 
 # ── Copy + inject icon ───────────────────────────────────────────────────────
 
-ditto "$APP_PATH_IN_ARCHIVE" "$DIST_APP_PATH"
+ditto "$SOURCE_APP_PATH" "$DIST_APP_PATH"
 
 # Inject the .icns and wire CFBundleIconFile so Finder shows the icon.
 if [[ -f "$ICNS_PATH" ]]; then
@@ -416,7 +408,7 @@ else
 fi
 
 echo ""
-echo "Archive:  $ARCHIVE_PATH"
+echo "Channel:  $RELEASE_CHANNEL"
 echo "App:      $DIST_APP_PATH"
 echo "PKG:      $PKG_PATH"
 echo "ZIP:      $ZIP_PATH"

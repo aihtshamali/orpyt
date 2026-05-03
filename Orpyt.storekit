@@ -1,0 +1,114 @@
+{
+  "identifier" : "26B1F831",
+  "nonConsumableProducts" : [
+
+  ],
+  "consumableProducts" : [
+
+  ],
+  "autoRenewableSubscriptions" : [
+    {
+      "adHocOffers" : [
+
+      ],
+      "codeOffers" : [
+
+      ],
+      "displayPrice" : "2.99",
+      "familyShareable" : true,
+      "groupNumber" : 1,
+      "internalID" : "A1B2C3D4E5F6A1B2",
+      "introductoryOffer" : {
+        "duration" : "P7D",
+        "offerIdentifier" : "com.orpyt.pro.monthly.trial",
+        "offerMode" : "freeTrial",
+        "offerType" : 1
+      },
+      "localizations" : [
+        {
+          "description" : "Flexible monthly access to all Orpyt Pro features.",
+          "displayName" : "Orpyt Pro Monthly",
+          "locale" : "en_GB"
+        },
+        {
+          "description" : "Flexible monthly access to all Orpyt Pro features.",
+          "displayName" : "Orpyt Pro Monthly",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.orpyt.pro.monthly",
+      "referenceName" : "Orpyt Pro Monthly",
+      "subscriptionGroupID" : "ORPYT_PRO",
+      "subscriptionPeriod" : "P1M",
+      "type" : "RecurringSubscription"
+    },
+    {
+      "adHocOffers" : [
+
+      ],
+      "codeOffers" : [
+        {
+          "duration" : "P1Y",
+          "offerIdentifier" : "com.orpyt.pro.yearly.founder",
+          "offerMode" : "freeTrial",
+          "offerType" : 3
+        }
+      ],
+      "displayPrice" : "19.99",
+      "familyShareable" : true,
+      "groupNumber" : 1,
+      "internalID" : "B2C3D4E5F6A1B2C3",
+      "introductoryOffer" : {
+        "duration" : "P7D",
+        "offerIdentifier" : "com.orpyt.pro.yearly.trial",
+        "offerMode" : "freeTrial",
+        "offerType" : 1
+      },
+      "localizations" : [
+        {
+          "description" : "Best value for everyday cross-time-zone work.",
+          "displayName" : "Orpyt Pro Yearly",
+          "locale" : "en_GB"
+        },
+        {
+          "description" : "Best value for everyday cross-time-zone work.",
+          "displayName" : "Orpyt Pro Yearly",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.orpyt.pro.yearly",
+      "referenceName" : "Orpyt Pro Yearly",
+      "subscriptionGroupID" : "ORPYT_PRO",
+      "subscriptionPeriod" : "P1Y",
+      "type" : "RecurringSubscription"
+    }
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGraceperiodEnabled" : true,
+    "_billingGracePeriodDurationValue" : 16,
+    "_billingGracePeriodDurationUnit" : 2,
+    "_locale" : "en_GB",
+    "_storefront" : "GBR",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "ORPYT_PRO",
+      "localizations" : [
+        {
+          "customAppName" : "Orpyt",
+          "displayName" : "Orpyt Pro",
+          "locale" : "en_GB"
+        }
+      ],
+      "name" : "Orpyt Pro"
+    }
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}

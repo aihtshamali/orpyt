@@ -136,7 +136,7 @@ public enum ClockFormatter {
             parts.append(dateString)
         }
 
-        if settings.enableWeather {
+        if settings.effectiveWeatherEnabled {
             switch weatherState {
             case let .loaded(snapshot):
                 parts.append("\(snapshot.temperatureText), \(snapshot.conditionText)")
@@ -271,7 +271,7 @@ public enum ClockFormatter {
         settings: ClockSettingsStore,
         font: NSFont
     ) -> NSAttributedString? {
-        let shouldShowWeatherIcon = settings.enableWeather && settings.showWeatherInMenuBar
+        let shouldShowWeatherIcon = settings.effectiveWeatherEnabled && settings.showWeatherInMenuBar
         let shouldShowAmbientIcon = settings.showStatusIcon
 
         guard shouldShowWeatherIcon || shouldShowAmbientIcon else {
@@ -344,7 +344,10 @@ public enum TimeZoneCatalog {
     }
 
     nonisolated(unsafe) static let options: [TimeZoneOption] = {
-        TimeZone.knownTimeZoneIdentifiers
+        let enLocale = Locale(identifier: "en_US_POSIX")
+        // Strip common suffixes from Apple's generic timezone names to extract country/region
+        let suffixesToStrip = [" Standard Time", " Daylight Time", " Summer Time", " Time"]
+        return TimeZone.knownTimeZoneIdentifiers
             .compactMap { identifier -> TimeZoneOption? in
                 guard let timeZone = TimeZone(identifier: identifier) else { return nil }
                 let cityName = identifier.split(separator: "/").last?
@@ -352,12 +355,23 @@ public enum TimeZoneCatalog {
                 let shortLabel = shortLabel(for: identifier, fallback: cityName)
                 let offset = offsetText(for: timeZone)
                 let displayName = "\(cityName) (\(offset))"
+
+                // Use Apple's own localized name to derive country context — no static data needed
+                var countryHint = timeZone.localizedName(for: .generic, locale: enLocale) ?? ""
+                for suffix in suffixesToStrip {
+                    if countryHint.hasSuffix(suffix) {
+                        countryHint = String(countryHint.dropLast(suffix.count))
+                        break
+                    }
+                }
+                let shortGeneric = timeZone.localizedName(for: .shortGeneric, locale: enLocale) ?? ""
+
                 return TimeZoneOption(
                     id: identifier,
                     shortLabel: shortLabel,
                     cityName: cityName,
                     displayName: displayName,
-                    searchableText: "\(cityName) \(identifier) \(shortLabel) \(offset)"
+                    searchableText: "\(cityName) \(identifier) \(shortLabel) \(offset) \(countryHint) \(shortGeneric)"
                 )
             }
             .sorted {
@@ -446,6 +460,18 @@ public enum TimeZoneCatalog {
         let hours = seconds / 3600
         let minutes = abs((seconds / 60) % 60)
         return String(format: "GMT%+.2d:%02d", hours, minutes)
+    }
+}
+
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255
+        let g = Double((int >> 8) & 0xFF) / 255
+        let b = Double(int & 0xFF) / 255
+        self.init(red: r, green: g, blue: b)
     }
 }
 

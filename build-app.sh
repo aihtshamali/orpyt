@@ -11,8 +11,9 @@ DIST_APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+CONFIGURATION="${ORPYT_BUILD_CONFIGURATION:-debug}"
 
-swift build
+swift build -c "$CONFIGURATION"
 
 if [[ -d "$APP_DIR" ]]; then
   chflags -R nouchg "$APP_DIR" 2>/dev/null || true
@@ -21,15 +22,16 @@ if [[ -d "$APP_DIR" ]]; then
 fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-cp "$BUILD_DIR/debug/$APP_NAME" "$MACOS_DIR/$APP_NAME"
+cp "$BUILD_DIR/$CONFIGURATION/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 cp "$ROOT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
+
+/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://aihtshamali.github.io/orpyt/appcast.xml" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=" "$CONTENTS_DIR/Info.plist"
 
 if [[ -f "$ROOT_DIR/Assets/logo.png" ]]; then
   cp "$ROOT_DIR/Assets/logo.png" "$RESOURCES_DIR/logo.png"
-fi
-
-if [[ -f "$ROOT_DIR/Assets/appstore.png" ]]; then
-  cp "$ROOT_DIR/Assets/appstore.png" "$RESOURCES_DIR/appstore.png"
 fi
 
 if [[ -f "$ROOT_DIR/Assets/Orpyt.icns" ]]; then

@@ -87,13 +87,13 @@ public final class ClockSettingsStore: ObservableObject {
         showGMTOffset = defaults.object(forKey: SettingsKeys.showGMTOffset) as? Bool ?? false
         showZoneLabelInMenuBar = defaults.object(forKey: SettingsKeys.showZoneLabelInMenuBar) as? Bool ?? true
         showStatusIcon = defaults.object(forKey: SettingsKeys.showStatusIcon) as? Bool ?? true
-        enableWeather = defaults.object(forKey: SettingsKeys.enableWeather) as? Bool ?? false
+        enableWeather = defaults.object(forKey: SettingsKeys.enableWeather) as? Bool ?? true
         showWeatherInMenuBar = defaults.object(forKey: SettingsKeys.showWeatherInMenuBar) as? Bool ?? true
         showWeatherLocation = defaults.object(forKey: SettingsKeys.showWeatherLocation) as? Bool ?? true
         showFeelsLikeTemperature = defaults.object(forKey: SettingsKeys.showFeelsLikeTemperature) as? Bool ?? true
         primaryWeatherLocation = defaults.string(forKey: SettingsKeys.primaryWeatherLocation) ?? ""
         secondaryWeatherLocation = defaults.string(forKey: SettingsKeys.secondaryWeatherLocation) ?? ""
-        showCalendarEvents = defaults.object(forKey: SettingsKeys.showCalendarEvents) as? Bool ?? false
+        showCalendarEvents = defaults.object(forKey: SettingsKeys.showCalendarEvents) as? Bool ?? true
         muteScrollerSound = defaults.object(forKey: SettingsKeys.muteScrollerSound) as? Bool ?? false
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: SettingsKeys.appearanceModeRawValue) ?? "") ?? .system
     }
@@ -110,8 +110,8 @@ public final class ClockSettingsStore: ObservableObject {
         secondaryCustomLabel = ""
         showPrimaryClock = true
         showSecondaryClock = true
-        enableWeather = false
-        showCalendarEvents = false
+        enableWeather = true
+        showCalendarEvents = true
         hasCompletedFirstLaunch = true
         return true
     }
@@ -135,7 +135,7 @@ public final class ClockSettingsStore: ObservableObject {
     }
 
     public var preferredColorScheme: ColorScheme? {
-        switch appearanceMode {
+        switch effectiveAppearanceMode {
         case .system:
             return nil
         case .light:
@@ -143,6 +143,18 @@ public final class ClockSettingsStore: ObservableObject {
         case .dark:
             return .dark
         }
+    }
+
+    public var effectiveAppearanceMode: AppearanceMode {
+        SubscriptionStore.shared.hasAccess(to: .appearance) ? appearanceMode : .system
+    }
+
+    public var effectiveWeatherEnabled: Bool {
+        enableWeather && SubscriptionStore.shared.hasAccess(to: .weather)
+    }
+
+    public var effectiveCalendarEnabled: Bool {
+        showCalendarEvents && SubscriptionStore.shared.hasAccess(to: .calendar)
     }
 
     /// Sets icon visibility with mutual exclusion: ambient and weather icons cannot both be on.

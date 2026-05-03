@@ -9,11 +9,11 @@
 	<key>CFBundleExecutable</key>
 	<string>Orpyt</string>
 	<key>CFBundleIconFile</key>
-	<string>Orpyt</string>
+	<string>AppIcon</string>
 	<key>CFBundleIconName</key>
-	<string>Orpyt</string>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.orpyt.clocks</string>
+	<string>com.orpyt.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -21,7 +21,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.14</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>10</string>
 	<key>LSApplicationCategoryType</key>
@@ -32,11 +32,15 @@
 	<true/>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Orpyt reads your upcoming events so it can show your next meeting in the popover.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Orpyt uses your location to show live weather on your clock cards.</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://aihtshamali.github.io/orpyt/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

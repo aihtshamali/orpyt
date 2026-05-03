@@ -76,7 +76,7 @@ public struct ClockCardView: View {
         .padding(18)
         .frame(
             maxWidth: .infinity,
-            minHeight: settings.enableWeather ? 270 : 220,
+            minHeight: settings.effectiveWeatherEnabled ? 270 : 220,
             alignment: .topLeading
         )
         .background(
@@ -100,7 +100,7 @@ public struct TimeZoneSearchProvider {
     public static func results(
         for query: String,
         suggestions: [String],
-        limit: Int = 8
+        limit: Int = 12
     ) -> [TimeZoneOption] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -184,6 +184,21 @@ public struct InlineTimeZoneEditorView: View {
                     .orpytClickableHover(scale: 1.03, brightness: 0.015)
             }
 
+            // ── Search field ──────────────────────────────────────────────
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField("Search city, country or time zone…", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Try \u{201C}Pakistan\u{201D}, \u{201C}Australia\u{201D}, \u{201C}EST\u{201D} or \u{201C}GMT+5\u{201D}")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // ── Current selection + nickname toggle ───────────────────────
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(selectedOption?.cityName ?? selectedTimeZoneID)
@@ -195,23 +210,20 @@ public struct InlineTimeZoneEditorView: View {
 
                 Spacer()
 
-                Toggle("Custom Name", isOn: $useCustomLabel)
+                Toggle("Nickname", isOn: $useCustomLabel)
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                    .help("Show a custom name in your menu bar instead of the city name")
             }
 
             if useCustomLabel {
-                TextField("Custom label", text: $customLabel)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            TextField("Search time zone", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Start typing to search, or pick from the suggested cities below.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("e.g. HQ, Client, Home…", text: $customLabel)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Shown in your menu bar instead of the city name")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             List {
@@ -289,7 +301,7 @@ public struct WeatherSummaryView: View {
     public let weatherState: WeatherState
 
     public var body: some View {
-        if settings.enableWeather {
+        if settings.effectiveWeatherEnabled {
             Group {
                 switch weatherState {
                 case .idle:

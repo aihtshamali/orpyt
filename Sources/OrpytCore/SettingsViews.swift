@@ -11,62 +11,97 @@ public struct SettingsView: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var navigationStore: SettingsNavigationStore
     public let onCheckForUpdates: () -> Void
     @State private var primarySearchText = ""
     @State private var secondarySearchText = ""
-    @State private var selectedPane: SettingsPane? = .overview
 
-    public init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, onCheckForUpdates: @escaping () -> Void) {
+    public init(
+        settings: ClockSettingsStore,
+        weatherStore: WeatherStore,
+        calendarStore: CalendarStore,
+        subscriptionStore: SubscriptionStore,
+        navigationStore: SettingsNavigationStore,
+        onCheckForUpdates: @escaping () -> Void
+    ) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
+        self.subscriptionStore = subscriptionStore
+        self.navigationStore = navigationStore
         self.onCheckForUpdates = onCheckForUpdates
     }
 
     public var body: some View {
         NavigationSplitView {
-            List(SettingsPane.allCases, selection: $selectedPane) { pane in
+            List(SettingsPane.allCases, selection: $navigationStore.selectedPane) { pane in
                 Label(pane.rawValue, systemImage: pane.icon)
                     .tag(pane)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .listStyle(.sidebar)
         } detail: {
-            detailView(for: selectedPane ?? .overview)
+            detailView(for: navigationStore.selectedPane)
         }
         .navigationSplitViewStyle(.balanced)
     }
 
     @ViewBuilder
     private func detailView(for pane: SettingsPane) -> some View {
+        let banner = ProUpgradeBanner(subscriptionStore: subscriptionStore, welcomeStore: WelcomePeriodStore.shared)
         switch pane {
         case .overview:
-            SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, onCheckForUpdates: onCheckForUpdates)
-                .navigationTitle("Overview")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates)
+            }
+            .navigationTitle("Overview")
         case .timeZones:
-            TimeZonesPane(
-                settings: settings,
-                primarySearchText: $primarySearchText,
-                secondarySearchText: $secondarySearchText
-            )
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                TimeZonesPane(settings: settings, primarySearchText: $primarySearchText, secondarySearchText: $secondarySearchText)
+            }
             .navigationTitle("Time Zones")
         case .menuBar:
-            MenuBarPane(settings: settings)
-                .navigationTitle("Menu Bar")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                MenuBarPane(settings: settings, subscriptionStore: subscriptionStore)
+            }
+            .navigationTitle("Menu Bar")
         case .details:
-            DetailsPane(settings: settings)
-                .navigationTitle("Clock Details")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                DetailsPane(settings: settings)
+            }
+            .navigationTitle("Clock Details")
         case .calendar:
-            CalendarPane(settings: settings, calendarStore: calendarStore)
-                .navigationTitle("Calendar")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                CalendarPane(settings: settings, calendarStore: calendarStore, subscriptionStore: subscriptionStore, navigationStore: navigationStore)
+            }
+            .navigationTitle("Calendar")
         case .weather:
-            WeatherPane(settings: settings)
-                .navigationTitle("Weather")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                WeatherPane(settings: settings, subscriptionStore: subscriptionStore, navigationStore: navigationStore)
+            }
+            .navigationTitle("Weather")
         case .appearance:
-            AppearancePane(settings: settings)
-                .navigationTitle("Appearance")
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                AppearancePane(settings: settings, subscriptionStore: subscriptionStore, navigationStore: navigationStore)
+            }
+            .navigationTitle("Appearance")
         }
     }
+}
+
+@MainActor
+public final class SettingsNavigationStore: ObservableObject {
+    @Published public var selectedPane: SettingsPane = .overview
+
+    public init() {}
 }
 
 public enum SettingsPane: String, CaseIterable, Identifiable {
@@ -110,8 +145,8 @@ public struct SettingsOverviewPane: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
     public let onCheckForUpdates: () -> Void
-
     private let metricColumns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 2)
 
     public var body: some View {
@@ -122,11 +157,15 @@ public struct SettingsOverviewPane: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(isPresented: $subscriptionStore.showProSheet) {
+            SubscriptionPane(subscriptionStore: subscriptionStore)
+                .frame(width: 460, height: 560)
+        }
     }
 
     private func overviewContent(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 22) {
-            OverviewHeroHeader(settings: settings, onCheckForUpdates: onCheckForUpdates)
+            OverviewHeroHeader(settings: settings, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates)
 
             if settings.isMenuBarOverflowing {
                 MenuBarOverflowBanner()
@@ -167,6 +206,10 @@ public struct SettingsOverviewPane: View {
                     OverviewMetricTile(metric: metric)
                 }
             }
+
+            #if DEBUG
+            WelcomePeriodDebugPanel(welcomeStore: WelcomePeriodStore.shared)
+            #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -192,10 +235,10 @@ public struct SettingsOverviewPane: View {
             OverviewMetricDescriptor(
                 icon: settings.enableWeather ? "cloud.sun.fill" : "cloud.slash",
                 title: "Weather",
-                value: settings.enableWeather
+                value: settings.effectiveWeatherEnabled
                     ? (liveWeatherCount > 0 ? "\(liveWeatherCount)/2 Live" : "Loading")
-                    : "Off",
-                caption: settings.enableWeather ? "Graceful fallback enabled" : "Chronos-only mode"
+                    : (subscriptionStore.hasAccess(to: .weather) ? "Off" : "Pro Locked"),
+                caption: settings.effectiveWeatherEnabled ? "Graceful fallback enabled" : (subscriptionStore.hasAccess(to: .weather) ? "Chronos-only mode" : "Unlock live weather in Orpyt Pro")
             ),
             OverviewMetricDescriptor(
                 icon: "rectangle.split.2x1",
@@ -206,8 +249,8 @@ public struct SettingsOverviewPane: View {
             OverviewMetricDescriptor(
                 icon: "calendar",
                 title: "Calendar",
-                value: settings.showCalendarEvents ? calendarMetricTitle : "Off",
-                caption: settings.showCalendarEvents ? calendarMetricCaption : "Read-only meeting context"
+                value: settings.effectiveCalendarEnabled ? calendarMetricTitle : (subscriptionStore.hasAccess(to: .calendar) ? "Off" : "Pro Locked"),
+                caption: settings.effectiveCalendarEnabled ? calendarMetricCaption : (subscriptionStore.hasAccess(to: .calendar) ? "Read-only meeting context" : "Unlock next meeting context in Orpyt Pro")
             ),
         ]
     }
@@ -244,8 +287,144 @@ public struct SettingsOverviewPane: View {
     }
 }
 
+#if DEBUG
+public struct WelcomePeriodDebugPanel: View {
+    @ObservedObject public var welcomeStore: WelcomePeriodStore
+    @State private var flushed = false
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "ant.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                Text("DEBUG — Welcome Period")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Reset Day") {
+                    welcomeStore.debugSetDay(nil)
+                    flushed = false
+                }
+                .font(.system(size: 10))
+                .controlSize(.mini)
+
+                Button(flushed ? "Flushed ✓" : "Flush All Data") {
+                    let domain = Bundle.main.bundleIdentifier ?? "com.orpyt.app"
+                    UserDefaults.standard.removePersistentDomain(forName: domain)
+                    UserDefaults.standard.removePersistentDomain(forName: "com.orpyt.clocks")
+                    UserDefaults.standard.synchronize()
+                    welcomeStore.debugSetDay(nil)
+                    flushed = true
+                }
+                .font(.system(size: 10))
+                .controlSize(.mini)
+                .foregroundStyle(flushed ? .green : .red)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach([1, 3, 6, 10, 12, 13, 14, 16], id: \.self) { day in
+                        Button(day == 16 ? "Day 16 (Expired)" : "Day \(day)") {
+                            welcomeStore.debugSetDay(day)
+                            flushed = false
+                        }
+                        .font(.system(size: 10, weight: .medium))
+                        .controlSize(.mini)
+                        .buttonStyle(.bordered)
+                        .tint(day == 16 ? .red : .primary)
+                    }
+                }
+            }
+
+            Text("Remaining: \(welcomeStore.daysRemaining) · In period: \(welcomeStore.isInWelcomePeriod ? "yes" : "no") · Expired: \(welcomeStore.hasExpired ? "yes" : "no")")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+
+            ProUpgradeBanner(
+                subscriptionStore: SubscriptionStore.shared,
+                welcomeStore: welcomeStore
+            )
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+        )
+    }
+}
+#endif
+
+public struct ProUpgradeBanner: View {
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var welcomeStore: WelcomePeriodStore
+
+    private var isVisible: Bool {
+        guard subscriptionStore.shouldShowUpgradeActions else { return false }
+        if subscriptionStore.entitlementState.hasProAccess { return false }
+        return true
+    }
+
+    private var bannerText: String {
+        if subscriptionStore.entitlementState == .trial {
+            return "✦  Trial active — your card won't be charged yet. Cancel any time."
+        }
+        if subscriptionStore.entitlementState.hasProAccess {
+            return "✦  Orpyt Pro is active — \(subscriptionStore.statusMessage)"
+        }
+        return "✦  \(welcomeStore.bannerMessage(yearlyPrice: subscriptionStore.yearlyMonthlyEquivalent))"
+    }
+
+    private var bannerColor: Color {
+        switch welcomeStore.urgencyLevel {
+        case .expired: return .red
+        case .critical: return .orange
+        case .warning: return Color(hex: "#E6A817")
+        case .neutral: return Color.accentColor
+        }
+    }
+
+    public var body: some View {
+        if isVisible {
+            Button(action: { subscriptionStore.showProSheet = true }) {
+                HStack(spacing: 10) {
+                    Text(bannerText)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Subscribe →")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(.white.opacity(0.18)))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [bannerColor, bannerColor.opacity(0.78)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
 public struct OverviewHeroHeader: View {
     @ObservedObject public var settings: ClockSettingsStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
     public let onCheckForUpdates: () -> Void
 
     private var systemZoneTitle: String {
@@ -274,9 +453,28 @@ public struct OverviewHeroHeader: View {
                 Spacer(minLength: 16)
 
                 VStack(alignment: .trailing, spacing: 8) {
-                    Button("Check for Updates…", action: onCheckForUpdates)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                    if subscriptionStore.supportsDirectUpdates {
+                        Button("Check for Updates…", action: onCheckForUpdates)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    } else {
+                        Button(action: { subscriptionStore.showProSheet = true }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: subscriptionStore.entitlementState.hasProAccess ? "crown.fill" : "crown")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(subscriptionStore.entitlementState.hasProAccess ? "Pro" : "Try Pro Free")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule()
+                                    .fill(Color.accentColor.opacity(0.12))
+                            )
+                            .foregroundStyle(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     if !appVersion.isEmpty {
                         Text("Version \(appVersion)")
                             .font(.system(size: 11))
@@ -287,7 +485,8 @@ public struct OverviewHeroHeader: View {
 
             HStack(spacing: 8) {
                 OverviewInlineTag(title: "Mode", value: settings.use24HourClock ? "24h" : "12h")
-                OverviewInlineTag(title: "Weather", value: settings.enableWeather ? "On" : "Off")
+                OverviewInlineTag(title: "Weather", value: settings.effectiveWeatherEnabled ? "On" : (subscriptionStore.hasAccess(to: .weather) ? "Off" : "Pro"))
+                OverviewInlineTag(title: "Plan", value: subscriptionStore.entitlementSummary)
                 OverviewInlineTag(title: "System", value: systemZoneTitle)
             }
         }
@@ -360,7 +559,7 @@ public struct OverviewMenuBarPreview: View {
 
                 OverviewInlineTag(
                     title: "Icons",
-                    value: settings.showWeatherInMenuBar ? "Weather" : settings.showStatusIcon ? "Ambient" : "Off"
+                    value: settings.effectiveWeatherEnabled && settings.showWeatherInMenuBar ? "Weather" : settings.showStatusIcon ? "Ambient" : "Off"
                 )
             }
         }
@@ -468,6 +667,407 @@ public struct OverviewMetricTile: View {
     }
 }
 
+public struct SubscriptionPane: View {
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var welcomeStore: WelcomePeriodStore = WelcomePeriodStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    private var isSubscribed: Bool { subscriptionStore.entitlementState.hasProAccess }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            // ── Header ───────────────────────────────────────────────────────
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 6) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(hex: "#5B8DEF"), Color(hex: "#9B6DFF")],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                        Text("Orpyt Pro")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                    }
+                    Text(isSubscribed
+                         ? subscriptionStore.statusMessage
+                         : welcomeStore.hasExpired
+                             ? "You had 14 days free. Keep everything from \(subscriptionStore.yearlyMonthlyEquivalent)."
+                             : "Everything you need, working across time zones.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .buttonStyle(.plain)
+                .padding(16)
+            }
+
+            Divider()
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 20) {
+                    if subscriptionStore.supportsDirectUpdates {
+                        SettingsCalloutCard(
+                            title: "Direct download build",
+                            subtitle: "This build stays fully unlocked while App Store subscriptions roll out."
+                        )
+                    } else if !isSubscribed {
+                        // ── Pro features grid ─────────────────────────────
+                        ProFeaturesGrid()
+
+                        // ── 7-day trial card ──────────────────────────────
+                        ProTrialCard()
+
+                        // ── Plan cards ────────────────────────────────────
+                        VStack(spacing: 10) {
+                            ForEach(subscriptionStore.availablePlans.sorted { $0.isRecommended && !$1.isRecommended }) { plan in
+                                SubscriptionPlanCard(
+                                    plan: plan,
+                                    yearlyMonthlyEquivalent: subscriptionStore.yearlyMonthlyEquivalent,
+                                    isProcessing: subscriptionStore.isProcessingPurchase
+                                ) {
+                                    Task { await subscriptionStore.purchase(planID: plan.id) }
+                                }
+                            }
+                        }
+
+                        // ── Cancel reassurance ────────────────────────────
+                        ProCancelCard()
+
+                    } else {
+                        SettingsCalloutCard(
+                            title: subscriptionStore.entitlementSummary,
+                            subtitle: subscriptionStore.statusMessage
+                        )
+                    }
+
+                    if let error = subscriptionStore.lastErrorMessage {
+                        VStack(spacing: 10) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.system(size: 14))
+                                Text(error)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Button("Try Again") {
+                                Task {
+                                    await subscriptionStore.refreshEntitlements()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+                    }
+
+                    if subscriptionStore.isLoadingProducts {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading prices from App Store…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                }
+                .padding(20)
+            }
+
+            Divider()
+
+            // ── Footer ────────────────────────────────────────────────────
+            HStack(spacing: 8) {
+                Button("Restore") { Task { await subscriptionStore.restorePurchases() } }
+                    .disabled(subscriptionStore.isProcessingPurchase)
+                Button("Manage") { subscriptionStore.manageSubscriptions() }
+                Button("Redeem Code") { subscriptionStore.redeemOfferCode() }
+                Spacer()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+public struct ProFeaturesGrid: View {
+    private let row1: [(String, String, String)] = [
+        ("cloud.sun.fill",         "Live Weather",        "Weather on every clock card"),
+        ("calendar",               "Calendar Context",    "Next meeting in the popover"),
+    ]
+    private let row2: [(String, String, String)] = [
+        ("clock.arrow.circlepath", "Time Scroller",       "Scrub forward & back across zones"),
+        ("sparkles",               "Appearance",          "Custom themes and polish"),
+    ]
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("What's included")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
+
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(row1, id: \.0) { icon, title, subtitle in
+                        ProFeatureCell(icon: icon, title: title, subtitle: subtitle)
+                    }
+                }
+                HStack(spacing: 8) {
+                    ForEach(row2, id: \.0) { icon, title, subtitle in
+                        ProFeatureCell(icon: icon, title: title, subtitle: subtitle)
+                    }
+                }
+            }
+        }
+    }
+}
+
+public struct ProFeatureCell: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor.opacity(0.1)))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(9)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+}
+
+public struct ProTrialCard: View {
+    public var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(
+                        colors: [Color(hex: "#5B8DEF"), Color(hex: "#9B6DFF")],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+                    .frame(width: 40, height: 40)
+                Text("7")
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("7 days completely free")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Full Pro access from day one. Your card is only charged on day 8 — if you decide to stay.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [Color(hex: "#5B8DEF").opacity(0.08), Color(hex: "#9B6DFF").opacity(0.08)],
+                    startPoint: .leading, endPoint: .trailing
+                ))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(hex: "#5B8DEF").opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+public struct ProCancelCard: View {
+    public var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(.green)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Cancel any time — really.")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("No forms, no calls, no emails. One tap in System Settings or your iPhone. Apple handles it instantly.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.green.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+public struct SubscriptionPlanCard: View {
+    public let plan: SubscriptionPlanDescriptor
+    public let yearlyMonthlyEquivalent: String
+    public let isProcessing: Bool
+    public let onSubscribe: () -> Void
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            if plan.isRecommended {
+                HStack {
+                    Spacer()
+                    Text("MOST POPULAR")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundStyle(.white)
+                        .tracking(1.2)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(LinearGradient(
+                                colors: [Color(hex: "#5B8DEF"), Color(hex: "#9B6DFF")],
+                                startPoint: .leading, endPoint: .trailing
+                            ))
+                        )
+                    Spacer()
+                }
+                .padding(.top, 12)
+                .padding(.bottom, -4)
+            }
+
+            HStack(alignment: .center, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(plan.isRecommended ? "Yearly" : "Monthly")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(plan.isRecommended
+                         ? "Billed annually · best value"
+                         : "Billed monthly · cancel any time")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(plan.isRecommended ? yearlyMonthlyEquivalent : plan.priceText)
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                    if plan.isRecommended {
+                        Text(plan.priceText + " billed once")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            Button(action: onSubscribe) {
+                HStack(spacing: 6) {
+                    if isProcessing {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(plan.isRecommended ? "Start Free Trial — Yearly" : "Start Free Trial — Monthly")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(isProcessing)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    plan.isRecommended
+                        ? LinearGradient(colors: [Color(hex: "#5B8DEF").opacity(0.5), Color(hex: "#9B6DFF").opacity(0.5)], startPoint: .leading, endPoint: .trailing)
+                        : LinearGradient(colors: [Color.black.opacity(0.06), Color.black.opacity(0.06)], startPoint: .leading, endPoint: .trailing),
+                    lineWidth: 1.2
+                )
+        )
+    }
+}
+
+public struct SubscriptionHighlightCard: View {
+    public let feature: OrpytProFeature
+
+    public var body: some View {
+        SettingsCalloutCard(
+            title: "Unlock \(feature.title)",
+            subtitle: feature.summary
+        )
+    }
+}
+
+public struct SettingsCalloutCard: View {
+    public let title: String
+    public let subtitle: String
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+            Text(subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.accentColor.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.16), lineWidth: 0.8)
+        )
+    }
+}
+
 public struct OverviewWeatherCard: View {
     public let title: String
     public let timeZoneID: String
@@ -496,7 +1096,7 @@ public struct OverviewWeatherCard: View {
         case .loading:
             return "Refreshing live conditions"
         case let .failed(message):
-            return settings.enableWeather ? message : ambientSummary
+            return settings.effectiveWeatherEnabled ? message : ambientSummary
         case .idle:
             return ambientSummary
         }
@@ -980,7 +1580,7 @@ extension View {
 
 public enum AppAssetLoader {
     public static func appIconImage() -> NSImage? {
-        for fileName in ["appstore.png", "logo.png", "Orpyt.icns"] {
+        for fileName in ["logo.png", "logo.png", "Orpyt.icns"] {
             if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
                let image = NSImage(contentsOf: url) {
                 return image
@@ -991,7 +1591,7 @@ public enum AppAssetLoader {
     }
 
     public static func brandImage() -> NSImage? {
-        for fileName in ["logo.png", "appstore.png", "orpyt-logo.png"] {
+        for fileName in ["logo.png", "logo.png", "orpyt-logo.png"] {
             if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
                let image = NSImage(contentsOf: url) {
                 return image
@@ -1039,12 +1639,13 @@ public struct TimeZonesPane: View {
 
 public struct MenuBarPane: View {
     @ObservedObject public var settings: ClockSettingsStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
 
     private var iconMode: Binding<MenuBarIconMode> {
         Binding(
             get: {
-                if settings.showWeatherInMenuBar { return .weather }
+                if settings.effectiveWeatherEnabled && settings.showWeatherInMenuBar { return .weather }
                 if settings.showStatusIcon { return .ambient }
                 return .none
             },
@@ -1055,7 +1656,7 @@ public struct MenuBarPane: View {
                 case .ambient:
                     settings.setMenuBarVisibility(icon: true, weather: false)
                 case .weather:
-                    guard settings.enableWeather else {
+                    guard settings.effectiveWeatherEnabled else {
                         settings.setMenuBarVisibility(icon: false, weather: false)
                         return
                     }
@@ -1110,7 +1711,10 @@ public struct MenuBarPane: View {
                     }
                 }
 
-                if !settings.enableWeather {
+                if !subscriptionStore.hasAccess(to: .weather) {
+                    Text("Weather icons are part of Orpyt Pro.")
+                        .foregroundStyle(.secondary)
+                } else if !settings.enableWeather {
                     Text("Turn on live weather in the Weather pane to use weather icons in the menu bar.")
                         .foregroundStyle(.secondary)
                 } else {
@@ -1174,13 +1778,26 @@ public struct DetailsPane: View {
 public struct CalendarPane: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var calendarStore: CalendarStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var navigationStore: SettingsNavigationStore
 
     public var body: some View {
         Form {
             Section("Next Meeting") {
-                Toggle(isOn: $settings.showCalendarEvents) {
-                    Text("Show next meeting")
-                    Text("Read your next calendar event and show it in the popover.")
+                if subscriptionStore.hasAccess(to: .calendar) {
+                    Toggle(isOn: $settings.showCalendarEvents) {
+                        Text("Show next meeting")
+                        Text("Read your next calendar event and show it in the popover.")
+                    }
+                } else {
+                    ProLockedSettingsRow(
+                        feature: .calendar,
+                        title: "Show next meeting",
+                        subtitle: "Read your next calendar event and show it in the popover.",
+                        buttonTitle: "Unlock Orpyt Pro"
+                    ) {
+                        subscriptionStore.focus(on: .calendar)
+                    }
                 }
                 if case let .loaded(snapshot) = calendarStore.state, let snapshot {
                     LabeledContent("Next event") {
@@ -1194,7 +1811,9 @@ public struct CalendarPane: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Text("Orpyt never creates or edits events. Permission is requested only after you turn this on.")
+                Text(subscriptionStore.hasAccess(to: .calendar)
+                     ? "Orpyt never creates or edits events. Permission is requested only after you turn this on."
+                     : "Calendar context is part of Orpyt Pro. When you unlock it, Orpyt still only reads upcoming events and never edits them.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -1214,13 +1833,26 @@ public struct CalendarPane: View {
 
 public struct WeatherPane: View {
     @ObservedObject public var settings: ClockSettingsStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var navigationStore: SettingsNavigationStore
 
     public var body: some View {
         Form {
             Section("Live Weather") {
-                Toggle(isOn: $settings.enableWeather) {
-                    Text("Enable live weather")
-                    Text("Attach live weather to each clock.")
+                if subscriptionStore.hasAccess(to: .weather) {
+                    Toggle(isOn: $settings.enableWeather) {
+                        Text("Enable live weather")
+                        Text("Attach live weather to each clock.")
+                    }
+                } else {
+                    ProLockedSettingsRow(
+                        feature: .weather,
+                        title: "Enable live weather",
+                        subtitle: "Attach live weather to each clock.",
+                        buttonTitle: "Unlock Orpyt Pro"
+                    ) {
+                        subscriptionStore.focus(on: .weather)
+                    }
                 }
                 Text("Weather follows each selected clock city automatically.")
                     .foregroundStyle(.secondary)
@@ -1231,12 +1863,12 @@ public struct WeatherPane: View {
                     Text("Show location in cards")
                     Text("Display the resolved city below the condition.")
                 }
-                .disabled(!settings.enableWeather)
+                .disabled(!settings.effectiveWeatherEnabled)
                 Toggle(isOn: $settings.showFeelsLikeTemperature) {
                     Text("Show feels like temperature")
                     Text("Include apparent temperature in the card details.")
                 }
-                .disabled(!settings.enableWeather)
+                .disabled(!settings.effectiveWeatherEnabled)
             }
 
             Section("Menu Bar") {
@@ -1250,16 +1882,29 @@ public struct WeatherPane: View {
 
 public struct AppearancePane: View {
     @ObservedObject public var settings: ClockSettingsStore
+    @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var navigationStore: SettingsNavigationStore
 
     public var body: some View {
         Form {
             Section("Popover") {
-                Picker("Appearance", selection: Binding(
-                    get: { settings.appearanceMode },
-                    set: { settings.appearanceMode = $0 }
-                )) {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                if subscriptionStore.hasAccess(to: .appearance) {
+                    Picker("Appearance", selection: Binding(
+                        get: { settings.appearanceMode },
+                        set: { settings.appearanceMode = $0 }
+                    )) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                } else {
+                    ProLockedSettingsRow(
+                        feature: .appearance,
+                        title: "Custom appearance",
+                        subtitle: "Choose light, dark, or system-controlled styling for the popover.",
+                        buttonTitle: "Unlock Orpyt Pro"
+                    ) {
+                        subscriptionStore.focus(on: .appearance)
                     }
                 }
                 Text("This changes the menu bar popover only. Settings always follow macOS.")
@@ -1271,9 +1916,51 @@ public struct AppearancePane: View {
                     Text("Mute scroller tick")
                     Text("Turn off the native tick sound while scrubbing time.")
                 }
+                .disabled(!subscriptionStore.hasAccess(to: .appearance))
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+public struct ProLockedSettingsRow: View {
+    public let feature: OrpytProFeature
+    public let title: String
+    public let subtitle: String
+    public let buttonTitle: String
+    public let onTap: () -> Void
+
+    public var body: some View {
+        ZStack(alignment: .trailing) {
+            // Real control — visible but blurred
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: feature.symbolName)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.vertical, 4)
+            .blur(radius: 2)
+            .allowsHitTesting(false)
+
+            // Crown lock badge
+            HStack(spacing: 4) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text("Pro")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color.accentColor.opacity(0.13)))
+            .foregroundStyle(Color.accentColor)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onTap() }
     }
 }
 

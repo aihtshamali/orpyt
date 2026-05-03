@@ -1,11 +1,15 @@
 <p align="center">
-  <img src="./Assets/circular-orpyt.png" alt="Orpyt Logo" width="160" />
+  <img src="./logo.png" alt="Orpyt Logo" width="160" />
 </p>
 
 <h1 align="center">Orpyt</h1>
 
 <p align="center">
   <strong>A native macOS menu bar clock for people working across time zones.</strong>
+</p>
+
+<p align="center">
+  <strong>Free during early access.</strong> Direct-download builds are currently available at no cost while Orpyt matures. The Mac App Store release is planned with a 7-day trial and Orpyt Pro subscription.
 </p>
 
 <p align="center">
@@ -33,6 +37,8 @@
 
 **Requirements:** macOS 13 Ventura or later.
 
+> **Early access:** Direct downloads are currently free to use. The Mac App Store release is planned to use a 7-day trial followed by Orpyt Pro.
+
 1. Go to [**Releases**](https://github.com/aihtshamali/orpyt/releases) and download the latest `Orpyt.pkg`.
 2. Open the package in macOS Installer.
 3. Follow the standard install steps. Orpyt is installed directly into **Applications**.
@@ -43,6 +49,36 @@
 > Orpyt is intended to ship as a signed and notarized native macOS installer package.
 
 To enable **Launch at Login**, open Orpyt → click the settings icon → General → toggle Launch at Login.
+
+---
+
+## App Store Plan
+
+Orpyt is being prepared for an App Store-first subscription launch with:
+
+- `Orpyt Pro Monthly` — product id `com.orpyt.pro.monthly`
+- `Orpyt Pro Yearly` — product id `com.orpyt.pro.yearly`
+- a `7-day free trial` for all new subscribers
+- a limited founder offer code plan for the first 10 supporters
+
+The free core stays generous:
+
+- dual clocks
+- quick city search and swap
+- 12h / 24h mode
+- seconds toggle
+- show one or two clocks
+- launch at login
+
+Orpyt Pro unlocks:
+
+- live weather
+- next meeting / calendar context
+- the time scroller
+- advanced appearance controls
+- future premium scheduling and sync features
+
+App Store refunds are handled by Apple. If billing looks wrong, users should request a refund through Apple Support.
 
 ---
 
@@ -193,7 +229,7 @@ If notarization credentials are not provided, Orpyt still produces the release `
 
 For direct user installs, use the PKG flow above.
 
-If you plan to ship through the Mac App Store, use Xcode archive validation and App Store Connect instead of DMG notarization.
+If you plan to ship through the Mac App Store, use Xcode archive validation and App Store Connect instead of DMG notarization. The Xcode target is App Store-oriented; `release.sh` is for the direct-download channel.
 
 ---
 

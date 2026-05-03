@@ -22,3 +22,20 @@ Orpyt.xcodeproj/project.xcworkspace/xcuserdata/
 # Release artifacts and backups
 dist/
 *.bak
+
+# AI tool configs
+.claude/
+.cursor/
+.cursorrules
+.kiro/
+.mcp.json
+.opencode.json
+.windsurfrules
+AGENTS.md
+GEMINI.md
+
+# Temp / planning files
+plan.md
+
+# Code review graph
+.code-review-graph/

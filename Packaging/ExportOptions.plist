@@ -12,7 +12,7 @@
     <string>Developer ID Application</string>
     <key>provisioningProfiles</key>
     <dict>
-        <key>com.orpyt.clocks</key>
+        <key>com.orpyt.app</key>
         <string>Orpyt Developer ID</string>
     </dict>
 </dict>
