@@ -33,7 +33,7 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>Orpyt reads your upcoming events so it can show your next meeting in the popover.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>Orpyt uses your location to show live weather on your clock cards.</string>
+	<string>Orpyt uses your current location to fetch live weather conditions for your clock cards. For example, if you are in New York, it will show the current temperature and weather in New York on your primary clock card.</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>SUFeedURL</key>

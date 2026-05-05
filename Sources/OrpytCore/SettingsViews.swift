@@ -795,15 +795,30 @@ public struct SubscriptionPane: View {
             Divider()
 
             // ── Footer ────────────────────────────────────────────────────
-            HStack(spacing: 8) {
-                Button("Restore") { Task { await subscriptionStore.restorePurchases() } }
-                    .disabled(subscriptionStore.isProcessingPurchase)
-                Button("Manage") { subscriptionStore.manageSubscriptions() }
-                Button("Redeem Code") { subscriptionStore.redeemOfferCode() }
-                Spacer()
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button("Restore") { Task { await subscriptionStore.restorePurchases() } }
+                        .disabled(subscriptionStore.isProcessingPurchase)
+                    Button("Manage") { subscriptionStore.manageSubscriptions() }
+                    Button("Redeem Code") { subscriptionStore.redeemOfferCode() }
+                    Spacer()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                HStack(spacing: 16) {
+                    Button("Privacy Policy") {
+                        NSWorkspace.shared.open(URL(string: "https://aihtshamali.github.io/orpyt-world-time-made-simple/privacy")!)
+                    }
+                    Button("Terms of Use") {
+                        NSWorkspace.shared.open(URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                    }
+                    Spacer()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
@@ -988,10 +1003,10 @@ public struct SubscriptionPlanCard: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(plan.isRecommended ? yearlyMonthlyEquivalent : plan.priceText)
+                    Text(plan.priceText)
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                     if plan.isRecommended {
-                        Text(plan.priceText + " billed once")
+                        Text(yearlyMonthlyEquivalent + " · billed annually")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
