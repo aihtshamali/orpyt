@@ -401,8 +401,8 @@ public struct NextMeetingSnippetView: View {
                     cardSurface(interactive: true) {
                         summaryRow(
                             symbol: "calendar.badge.exclamationmark",
-                            title: "Allow Calendar Access",
-                            subtitle: "Tap to open Privacy settings and enable Orpyt.",
+                            title: "Calendar Access Needed",
+                            subtitle: "Continue to grant Orpyt access in Privacy settings.",
                             showsChevron: true
                         )
                     }

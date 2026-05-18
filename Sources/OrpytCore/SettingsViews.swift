@@ -291,6 +291,7 @@ public struct SettingsOverviewPane: View {
 public struct WelcomePeriodDebugPanel: View {
     @ObservedObject public var welcomeStore: WelcomePeriodStore
     @State private var flushed = false
+    @State private var subscriptionReset = false
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -308,6 +309,22 @@ public struct WelcomePeriodDebugPanel: View {
                 }
                 .font(.system(size: 10))
                 .controlSize(.mini)
+
+                Button(subscriptionReset ? "Sub Reset ✓" : "Reset Sub") {
+                    let domain = Bundle.main.bundleIdentifier ?? "com.orpyt.app"
+                    let defaults = UserDefaults.standard
+                    let subKeys = ["subscription.entitlementState", "subscription.activePlanID",
+                                   "subscription.renewalDate", "subscription.expirationDate",
+                                   "subscription.willAutoRenew", "subscription.statusMessage"]
+                    subKeys.forEach { defaults.removeObject(forKey: $0) }
+                    defaults.synchronize()
+                    Task { await SubscriptionStore.shared.refreshEntitlements() }
+                    subscriptionReset = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { subscriptionReset = false }
+                }
+                .font(.system(size: 10))
+                .controlSize(.mini)
+                .foregroundStyle(subscriptionReset ? .green : .blue)
 
                 Button(flushed ? "Flushed ✓" : "Flush All Data") {
                     let domain = Bundle.main.bundleIdentifier ?? "com.orpyt.app"
@@ -667,10 +684,51 @@ public struct OverviewMetricTile: View {
     }
 }
 
+public struct ProSuccessView: View {
+    public let statusMessage: String
+    @State private var appeared = false
+
+    public var body: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(
+                        colors: [Color(hex: "#5B8DEF"), Color(hex: "#9B6DFF")],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .scaleEffect(appeared ? 1 : 0.5)
+            .opacity(appeared ? 1 : 0)
+
+            Text("Welcome to Orpyt Pro")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .opacity(appeared ? 1 : 0)
+
+            Text(statusMessage)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .opacity(appeared ? 1 : 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 200)
+        .padding(.vertical, 32)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.62)) {
+                appeared = true
+            }
+        }
+    }
+}
+
 public struct SubscriptionPane: View {
     @ObservedObject public var subscriptionStore: SubscriptionStore
     @ObservedObject public var welcomeStore: WelcomePeriodStore = WelcomePeriodStore.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var justPurchased = false
 
     private var isSubscribed: Bool { subscriptionStore.entitlementState.hasProAccess }
 
@@ -737,9 +795,15 @@ public struct SubscriptionPane: View {
                                 SubscriptionPlanCard(
                                     plan: plan,
                                     yearlyMonthlyEquivalent: subscriptionStore.yearlyMonthlyEquivalent,
-                                    isProcessing: subscriptionStore.isProcessingPurchase
+                                    isProcessing: subscriptionStore.isProcessingPurchase,
+                                    isLoadingProducts: subscriptionStore.isLoadingProducts
                                 ) {
-                                    Task { await subscriptionStore.purchase(planID: plan.id) }
+                                    Task {
+                                        await subscriptionStore.purchase(planID: plan.id)
+                                        if subscriptionStore.entitlementState.hasProAccess {
+                                            justPurchased = true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -748,10 +812,12 @@ public struct SubscriptionPane: View {
                         ProCancelCard()
 
                     } else {
-                        SettingsCalloutCard(
-                            title: subscriptionStore.entitlementSummary,
-                            subtitle: subscriptionStore.statusMessage
-                        )
+                        ProSuccessView(statusMessage: subscriptionStore.statusMessage)
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+                                    dismiss()
+                                }
+                            }
                     }
 
                     if let error = subscriptionStore.lastErrorMessage {
@@ -964,6 +1030,7 @@ public struct SubscriptionPlanCard: View {
     public let plan: SubscriptionPlanDescriptor
     public let yearlyMonthlyEquivalent: String
     public let isProcessing: Bool
+    public let isLoadingProducts: Bool
     public let onSubscribe: () -> Void
 
     public var body: some View {
@@ -1017,17 +1084,19 @@ public struct SubscriptionPlanCard: View {
 
             Button(action: onSubscribe) {
                 HStack(spacing: 6) {
-                    if isProcessing {
+                    if isProcessing || isLoadingProducts {
                         ProgressView().controlSize(.small)
                     }
-                    Text(plan.isRecommended ? "Start Free Trial — Yearly" : "Start Free Trial — Monthly")
+                    Text(isLoadingProducts
+                         ? "Loading…"
+                         : plan.isRecommended ? "Start Free Trial — Yearly" : "Start Free Trial — Monthly")
                         .font(.system(size: 13, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(isProcessing)
+            .disabled(isProcessing || isLoadingProducts)
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
         }
