@@ -250,7 +250,6 @@ public final class SubscriptionStore: ObservableObject {
     }
 
     public func hasAccess(to feature: OrpytProFeature) -> Bool {
-        if commerceMode == .directDistribution { return true }
         if entitlementState.hasProAccess { return true }
         return WelcomePeriodStore.shared.isInWelcomePeriod
     }
@@ -269,7 +268,7 @@ public final class SubscriptionStore: ObservableObject {
 
     public var entitlementSummary: String {
         if commerceMode == .directDistribution {
-            return "Direct download build"
+            return "Source build"
         }
         return entitlementState.title
     }
@@ -447,12 +446,12 @@ public final class SubscriptionStore: ObservableObject {
     }
 
     private func applyDirectDistributionState() {
-        activePlanID = .yearly
+        activePlanID = nil
         renewalDate = nil
         expirationDate = nil
         willAutoRenew = false
-        entitlementState = .active
-        statusMessage = "Direct download builds stay fully unlocked while App Store subscriptions are being rolled out."
+        entitlementState = .free
+        statusMessage = "Source builds include the free feature set. Orpyt Pro is available through the App Store version."
         lastErrorMessage = nil
         persistSnapshot()
     }

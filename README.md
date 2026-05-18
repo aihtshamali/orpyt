@@ -130,7 +130,7 @@ open dist/Orpyt.app
 
 After building, drag `dist/Orpyt.app` into `Applications` and run it like a normal macOS app.
 
-> Builds compiled from source use the `DIRECT_DISTRIBUTION` flag and stay fully unlocked. For the App Store experience with subscriptions, download from the App Store.
+> Builds compiled from source use the `DIRECT_DISTRIBUTION` flag and include the free feature set. Orpyt Pro is distributed through the Mac App Store version.
 
 ---
 

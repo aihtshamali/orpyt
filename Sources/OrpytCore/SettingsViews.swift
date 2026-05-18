@@ -809,8 +809,8 @@ public struct SubscriptionPane: View {
                 VStack(spacing: 20) {
                     if subscriptionStore.supportsDirectUpdates {
                         SettingsCalloutCard(
-                            title: "Direct download build",
-                            subtitle: "This build stays fully unlocked while App Store subscriptions roll out."
+                            title: "Source build",
+                            subtitle: "This build includes the free feature set. Orpyt Pro is available through the App Store version."
                         )
                     } else if !isSubscribed {
                         // ── Pro features grid ─────────────────────────────

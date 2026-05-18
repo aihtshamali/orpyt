@@ -16,15 +16,15 @@ Source: https://developer.apple.com/app-store/product-page/
 Secondary fit, if needed: `Utilities`
 
 ## Promotional Text
-`A calm menu bar clock for remote teams: dual time zones, weather, meeting alerts, Today’s Plan, and a time scroller for planning across cities.`
+`New: meeting alerts, Today’s Plan, join links, calendar refresh, country search, weather, and time scroller planning.`
 
 ## Keywords
-`world clock,time zone,menu bar,remote work,meeting planner,weather,calendar,timezone`
+`meeting planner,timezone converter,calendar,weather,city time,global teams,scheduler,travel,agenda`
 
 ## Description
-Orpyt is a native macOS menu bar clock for people working across time zones.
+Orpyt is a native macOS menu bar clock with calendar intelligence for people working across time zones.
 
-Keep two cities visible in your menu bar, open a fast popover for more detail, and plan across hours without leaving your current workflow. Orpyt is built to feel calm, glanceable, and useful during real work: remote standups, client calls, travel planning, and everyday coordination across cities.
+Keep two cities visible in your menu bar, see upcoming meeting context at a glance, open Today’s Plan, and plan across hours without leaving your current workflow. Orpyt is built to feel calm, glanceable, and useful during real work: remote standups, client calls, travel planning, and everyday coordination across cities.
 
 Free features:
 - Dual clocks in the macOS menu bar
@@ -41,6 +41,8 @@ Orpyt Pro adds:
 - Read-only calendar context for your next meeting
 - Meeting alerts in the menu bar
 - Today’s Plan for the rest of your day
+- Join and copy meeting links when available
+- Manual calendar refresh from the menu
 - Time Scroller for previewing future or past hours across both clocks
 - Advanced appearance controls
 
@@ -51,12 +53,13 @@ Weather is based on your configured clock locations, so you can understand the p
 Orpyt is for anyone who wants time zones to feel less like mental math and more like a quiet part of the Mac.
 
 ## What’s New
-Smarter calendar context for cross-time-zone work:
+New calendar intelligence for cross-time-zone work:
 
 - Added menu bar meeting alerts for upcoming meetings
 - Added Today’s Plan in the popover
 - Added quick join and copy-link actions for calendar meetings
 - Added a calendar refresh action
+- Added faster country search for matching cities
 - Improved meeting indicator hover behavior and spacing
 - Added a warmer, Apple-compliant feedback and review flow
 - Added a Suggest a Feature link to GitHub Discussions
@@ -91,6 +94,7 @@ Subscriptions:
 Notes for direct-download builds:
 - Direct-download builds use Sparkle for updates.
 - App Store builds use StoreKit commerce and Apple’s system review prompt.
+- Source builds include the free feature set; Orpyt Pro is distributed through the Mac App Store version.
 - Feature suggestions open GitHub Discussions: https://github.com/aihtshamali/orpyt/discussions
 
 ## App Privacy Draft
