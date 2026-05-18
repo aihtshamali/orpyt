@@ -9,12 +9,23 @@ import WeatherKit
 
 @MainActor
 public enum ClockFormatter {
+    public struct MenuBarMeetingIndicatorRender {
+        public let prefix: NSAttributedString
+        public let hitWidth: CGFloat
+
+        public init(prefix: NSAttributedString, hitWidth: CGFloat) {
+            self.prefix = prefix
+            self.hitWidth = hitWidth
+        }
+    }
+
     private static var formatterCache: [String: DateFormatter] = [:]
 
     public static func menuBarAttributedTitle(
         for date: Date,
         settings: ClockSettingsStore,
-        weatherStore: WeatherStore
+        weatherStore: WeatherStore,
+        primaryTextOverride: String? = nil
     ) -> NSAttributedString {
         let titleFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         let titleColor = NSColor.labelColor
@@ -53,12 +64,14 @@ public enum ClockFormatter {
 
             result.append(
                 NSAttributedString(
-                    string: menuBarSegment(
-                        for: date,
-                        timeZoneID: segment.timeZoneID,
-                        label: segment.label,
-                        settings: settings
-                    ),
+                    string: index == 0 && primaryTextOverride != nil
+                        ? primaryTextOverride!
+                        : menuBarSegment(
+                            for: date,
+                            timeZoneID: segment.timeZoneID,
+                            label: segment.label,
+                            settings: settings
+                        ),
                     attributes: textAttributes
                 )
             )
@@ -79,6 +92,96 @@ public enum ClockFormatter {
     public static func menuBarTooltip(for date: Date, settings: ClockSettingsStore, weatherStore: WeatherStore) -> String {
         let lines = visibleDetailLines(for: date, settings: settings, weatherStore: weatherStore)
         return lines.isEmpty ? "Orpyt" : lines.joined(separator: "\n")
+    }
+
+    public static func activeMeetingAlert(
+        for date: Date,
+        settings: ClockSettingsStore,
+        calendarState: CalendarState
+    ) -> MeetingAlertSnapshot? {
+        guard settings.effectiveMeetingIndicatorStyle != .off,
+              case let .loaded(snapshot) = calendarState,
+              let meeting = snapshot?.nextMeeting else {
+            return nil
+        }
+
+        if date >= meeting.startDate && date < meeting.endDate {
+            return MeetingAlertSnapshot(
+                meeting: meeting,
+                phase: .critical,
+                minutesUntilStart: 0,
+                isLive: true
+            )
+        }
+
+        guard meeting.startDate > date else {
+            return nil
+        }
+
+        let secondsUntilStart = meeting.startDate.timeIntervalSince(date)
+        let minutesUntilStart = max(1, Int(ceil(secondsUntilStart / 60)))
+
+        guard minutesUntilStart <= settings.meetingEarlyWarningMinutes else {
+            return nil
+        }
+
+        return MeetingAlertSnapshot(
+            meeting: meeting,
+            phase: minutesUntilStart <= settings.meetingCriticalWarningMinutes ? .critical : .early,
+            minutesUntilStart: minutesUntilStart,
+            isLive: false
+        )
+    }
+
+    public static func meetingIndicatorRender(
+        for alert: MeetingAlertSnapshot,
+        style: MeetingIndicatorStyle,
+        font: NSFont
+    ) -> MenuBarMeetingIndicatorRender? {
+        switch style {
+        case .off:
+            return nil
+        case .tinyBadge:
+            guard let prefix = tinyBadgeAttachment(for: alert, font: font) else { return nil }
+            return MenuBarMeetingIndicatorRender(prefix: prefix, hitWidth: font.pointSize + 8)
+        case .imminentPill, .fullReplace:
+            let label = meetingIndicatorLabel(for: alert)
+            guard let prefix = pillAttachment(text: label, phase: alert.phase, font: font) else { return nil }
+            let width = max(font.pointSize + 8, prefix.size().width + 6)
+            return MenuBarMeetingIndicatorRender(prefix: prefix, hitWidth: width)
+        }
+    }
+
+    public static func meetingIndicatorLabel(for alert: MeetingAlertSnapshot) -> String {
+        if alert.isLive {
+            return "Now"
+        }
+        return "\(alert.minutesUntilStart)m"
+    }
+
+    public static func meetingCountdownText(for alert: MeetingAlertSnapshot) -> String {
+        if alert.isLive {
+            return "Live now"
+        }
+        return alert.minutesUntilStart == 1 ? "in 1 min" : "in \(alert.minutesUntilStart) min"
+    }
+
+    public static func meetingHoverTitle(for alert: MeetingAlertSnapshot) -> String {
+        truncatedMeetingTitle(alert.meeting.title, maxLength: 30)
+    }
+
+    public static func meetingFullReplaceTitle(for alert: MeetingAlertSnapshot) -> String {
+        if alert.isLive {
+            return truncatedMeetingTitle(alert.meeting.title, maxLength: 26)
+        }
+        return "\(truncatedMeetingTitle(alert.meeting.title, maxLength: 20)) · \(meetingCountdownText(for: alert))"
+    }
+
+    public static func meetingTooltipLine(for alert: MeetingAlertSnapshot, timeZoneID: String) -> String {
+        let formatter = formatter(for: timeZoneID, format: "h:mm a")
+        let startTime = formatter.string(from: alert.meeting.startDate)
+        let status = alert.isLive ? "Live now" : meetingCountdownText(for: alert)
+        return "Meeting: \(alert.meeting.title) • \(startTime) • \(status)"
     }
 
     public static func timeText(for date: Date, timeZoneID: String, settings: ClockSettingsStore) -> String {
@@ -332,6 +435,72 @@ public enum ClockFormatter {
         formatter.dateFormat = format
         formatterCache[cacheKey] = formatter
         return formatter
+    }
+
+    private static func truncatedMeetingTitle(_ title: String, maxLength: Int) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxLength else { return trimmed }
+        let endIndex = trimmed.index(trimmed.startIndex, offsetBy: max(1, maxLength - 1))
+        return String(trimmed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    private static func tinyBadgeAttachment(for alert: MeetingAlertSnapshot, font: NSFont) -> NSAttributedString? {
+        let size = NSSize(width: font.pointSize - 1, height: font.pointSize - 1)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        let rect = NSRect(origin: .zero, size: size).insetBy(dx: 1.5, dy: 1.5)
+        indicatorFillColor(for: alert.phase).setFill()
+        NSBezierPath(ovalIn: rect).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -1.5, width: size.width, height: size.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
+    private static func pillAttachment(text: String, phase: MeetingAlertPhase, font: NSFont) -> NSAttributedString? {
+        let textFont = NSFont.systemFont(ofSize: max(9, font.pointSize - 1), weight: .semibold)
+        let horizontalPadding: CGFloat = 9
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: textFont,
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (text as NSString).size(withAttributes: textAttributes)
+        let imageSize = NSSize(width: ceil(textSize.width + horizontalPadding * 2), height: 18)
+        let image = NSImage(size: imageSize)
+        image.lockFocus()
+
+        let rect = NSRect(origin: .zero, size: imageSize)
+        let pillRect = rect.insetBy(dx: 0.5, dy: 0.5)
+        indicatorFillColor(for: phase).setFill()
+        NSBezierPath(roundedRect: pillRect, xRadius: pillRect.height / 2, yRadius: pillRect.height / 2).fill()
+
+        let textRect = NSRect(
+            x: round((imageSize.width - textSize.width) / 2),
+            y: round((imageSize.height - textSize.height) / 2) - 1,
+            width: ceil(textSize.width),
+            height: ceil(textSize.height) + 2
+        )
+        (text as NSString).draw(in: textRect, withAttributes: textAttributes)
+
+        image.unlockFocus()
+        image.isTemplate = false
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -5, width: imageSize.width, height: imageSize.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
+    private static func indicatorFillColor(for phase: MeetingAlertPhase) -> NSColor {
+        switch phase {
+        case .early:
+            return NSColor(calibratedRed: 0.90, green: 0.56, blue: 0.16, alpha: 1)
+        case .critical:
+            return NSColor(calibratedRed: 0.85, green: 0.21, blue: 0.24, alpha: 1)
+        }
     }
 }
 

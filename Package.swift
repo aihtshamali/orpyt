@@ -20,7 +20,11 @@ let package = Package(
         // Internal types are accessible to both the app and the test target.
         .target(
             name: "OrpytCore",
-            path: "Sources/OrpytCore"
+            path: "Sources/OrpytCore",
+            swiftSettings: [
+                .define("DIRECT_DISTRIBUTION"),
+                .define("DEBUG", .when(configuration: .debug)),
+            ]
         ),
         // Executable — only the @main entry point, AppDelegate, and controllers.
         .executableTarget(
@@ -29,7 +33,11 @@ let package = Package(
                 "OrpytCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            path: "Sources/App"
+            path: "Sources/App",
+            swiftSettings: [
+                .define("DIRECT_DISTRIBUTION"),
+                .define("DEBUG", .when(configuration: .debug)),
+            ]
         ),
         // Unit tests — can @testable import OrpytCore.
         .testTarget(

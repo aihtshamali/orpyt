@@ -16,6 +16,8 @@
 		A00000000000000000000019 /* Stores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* Stores.swift */; };
 		A0000000000000000000001A /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000C /* Utilities.swift */; };
 		A0000000000000000000001B /* WeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000D /* WeatherStore.swift */; };
+		A0R000000000000000000001 /* ReviewPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0R000000000000000000011 /* ReviewPromptStore.swift */; };
+		A0R000000000000000000002 /* ReviewPromptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0R000000000000000000012 /* ReviewPromptStoreTests.swift */; };
 		A0T000000000000000000001 /* ClockFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000011 /* ClockFormatterTests.swift */; };
 		A0T000000000000000000002 /* ClockSettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000012 /* ClockSettingsStoreTests.swift */; };
 		A0T000000000000000000003 /* TimeZoneCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0T000000000000000000013 /* TimeZoneCatalogTests.swift */; };
@@ -51,6 +53,8 @@
 		A0000000000000000000000C /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
 		A0000000000000000000000D /* WeatherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherStore.swift; sourceTree = "<group>"; };
 		A0000000000000000000001D /* Assets/Orpyt.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Assets/Orpyt.icns; sourceTree = "<group>"; };
+		A0R000000000000000000011 /* ReviewPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPromptStore.swift; sourceTree = "<group>"; };
+		A0R000000000000000000012 /* ReviewPromptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPromptStoreTests.swift; sourceTree = "<group>"; };
 		A0T000000000000000000010 /* OrpytTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OrpytTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0T000000000000000000011 /* ClockFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockFormatterTests.swift; sourceTree = "<group>"; };
 		A0T000000000000000000012 /* ClockSettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockSettingsStoreTests.swift; sourceTree = "<group>"; };
@@ -145,6 +149,7 @@
 				A00000000000000000000007 /* ClockCardViews.swift */,
 				A00000000000000000000008 /* Models.swift */,
 				A00000000000000000000009 /* PopoverViews.swift */,
+				A0R000000000000000000011 /* ReviewPromptStore.swift */,
 				A0000000000000000000000A /* SettingsViews.swift */,
 				A0000000000000000000000B /* Stores.swift */,
 				A0U000000000000000000011 /* SubscriptionStore.swift */,
@@ -163,6 +168,7 @@
 				A0T000000000000000000013 /* TimeZoneCatalogTests.swift */,
 				A0T000000000000000000014 /* TimeScrollerTests.swift */,
 				A0T000000000000000000015 /* TimeZoneSearchProviderTests.swift */,
+				A0R000000000000000000012 /* ReviewPromptStoreTests.swift */,
 				A0U000000000000000000012 /* SubscriptionStoreTests.swift */,
 			);
 			path = Tests/OrpytTests;
@@ -277,6 +283,7 @@
 				A00000000000000000000015 /* ClockCardViews.swift in Sources */,
 				A00000000000000000000016 /* Models.swift in Sources */,
 				A00000000000000000000017 /* PopoverViews.swift in Sources */,
+				A0R000000000000000000001 /* ReviewPromptStore.swift in Sources */,
 				A00000000000000000000018 /* SettingsViews.swift in Sources */,
 				A00000000000000000000019 /* Stores.swift in Sources */,
 				A0U000000000000000000001 /* SubscriptionStore.swift in Sources */,
@@ -295,6 +302,7 @@
 				A0T000000000000000000003 /* TimeZoneCatalogTests.swift in Sources */,
 				A0T000000000000000000004 /* TimeScrollerTests.swift in Sources */,
 				A0T000000000000000000005 /* TimeZoneSearchProviderTests.swift in Sources */,
+				A0R000000000000000000002 /* ReviewPromptStoreTests.swift in Sources */,
 				A0U000000000000000000002 /* SubscriptionStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -15,9 +15,12 @@ public struct StatusPopoverView: View {
     public let appearanceMode: AppearanceMode
     public let onOpenSettings: (SettingsPane?) -> Void
     public let onSwapTimeZones: () -> Void
+    public let onCreateMeeting: () -> Void
     public let onQuit: () -> Void
+    public let onReviewValueMoment: (ReviewValueMoment) -> Void
     public let onContentHeightChange: (CGFloat) -> Void
     @State private var isQuickSearchPresented = false
+    @State private var isTodayPlanPresented = false
     @State private var quickSearchText = ""
     @State private var quickSearchTarget: ClockSlot = .secondary
     @State private var timeShiftMinutes = 0
@@ -29,7 +32,7 @@ public struct StatusPopoverView: View {
     private static let maxPopoverHeight: CGFloat = 760
 
     private var isScrollEnabled: Bool {
-        isQuickSearchPresented
+        isQuickSearchPresented || isTodayPlanPresented
     }
 
     public init(
@@ -40,7 +43,9 @@ public struct StatusPopoverView: View {
         appearanceMode: AppearanceMode,
         onOpenSettings: @escaping (SettingsPane?) -> Void,
         onSwapTimeZones: @escaping () -> Void,
+        onCreateMeeting: @escaping () -> Void,
         onQuit: @escaping () -> Void,
+        onReviewValueMoment: @escaping (ReviewValueMoment) -> Void,
         onContentHeightChange: @escaping (CGFloat) -> Void
     ) {
         self.settings = settings
@@ -50,7 +55,9 @@ public struct StatusPopoverView: View {
         self.appearanceMode = appearanceMode
         self.onOpenSettings = onOpenSettings
         self.onSwapTimeZones = onSwapTimeZones
+        self.onCreateMeeting = onCreateMeeting
         self.onQuit = onQuit
+        self.onReviewValueMoment = onReviewValueMoment
         self.onContentHeightChange = onContentHeightChange
     }
 
@@ -63,6 +70,10 @@ public struct StatusPopoverView: View {
 
         if isQuickSearchPresented {
             height += 220
+        }
+
+        if isTodayPlanPresented {
+            height += todayPlanHeightAllowance
         }
 
         if settings.effectiveWeatherEnabled {
@@ -87,6 +98,17 @@ public struct StatusPopoverView: View {
     }
 
     private var updateInterval: Double { settings.showSeconds ? 1 : 60 }
+
+    private var todayPlanHeightAllowance: CGFloat {
+        guard case let .loaded(snapshot) = calendarStore.state else {
+            return 136
+        }
+
+        let visibleAgendaCount = min(snapshot?.todayAgenda.count ?? 0, 4)
+        let extraRowAllowance = max(visibleAgendaCount - 1, 0)
+        let overflowActionAllowance: CGFloat = (snapshot?.todayAgenda.count ?? 0) > 4 ? 26 : 0
+        return 124 + (CGFloat(extraRowAllowance) * 28) + overflowActionAllowance
+    }
 
     public var body: some View {
         TimelineView(.periodic(from: .now, by: updateInterval)) { (context: TimelineViewDefaultContext) in
@@ -230,6 +252,8 @@ public struct StatusPopoverView: View {
                                     now: context.date,
                                     primaryTimeZoneID: settings.primaryTimeZoneID,
                                     onOpenMeeting: openMeeting,
+                                    onCreateMeeting: onCreateMeeting,
+                                    onOpenCalendar: openCalendarDay,
                                     onRequestAccess: {
                                         let status = EKEventStore.authorizationStatus(for: .event)
                                         let isDenied: Bool
@@ -243,7 +267,11 @@ public struct StatusPopoverView: View {
                                         } else {
                                             Task { await calendarStore.enable(using: settings) }
                                         }
-                                    }
+                                    },
+                                    onRefreshCalendar: {
+                                        Task { await calendarStore.refresh(using: settings) }
+                                    },
+                                    isAgendaExpanded: $isTodayPlanPresented
                                 )
                             } else if subscriptionStore.shouldShowUpgradeActions && !subscriptionStore.hasAccess(to: .calendar) {
                                 PopoverProLockedCard(
@@ -311,6 +339,14 @@ public struct StatusPopoverView: View {
                             scrollProxy.scrollTo("popoverTop", anchor: .top)
                         }
                     }
+                    .onChange(of: isTodayPlanPresented) { isPresented in
+                        if isPresented {
+                            onReviewValueMoment(.todayPlanOpened)
+                        }
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            scrollProxy.scrollTo("popoverTop", anchor: .top)
+                        }
+                    }
                 }
             }
             .frame(width: 452)
@@ -327,6 +363,7 @@ public struct StatusPopoverView: View {
                 // Reset all transient UI state when the popover closes.
                 // Persisted settings (time zone, labels, chip toggles) are NOT touched.
                 isQuickSearchPresented = false
+                isTodayPlanPresented = false
                 quickSearchText = ""
                 primarySearchText = ""
                 secondarySearchText = ""
@@ -334,6 +371,11 @@ public struct StatusPopoverView: View {
             }
             .onChange(of: preferredPopoverHeight) { newValue in
                 onContentHeightChange(newValue)
+            }
+            .onChange(of: timeShiftMinutes) { newValue in
+                if newValue != 0 {
+                    onReviewValueMoment(.timeScrollerUsed)
+                }
             }
             .task(id: timeShiftMinutes) {
                 guard timeShiftMinutes != 0 else { return }
@@ -437,6 +479,10 @@ public struct StatusPopoverView: View {
             NSWorkspace.shared.open(joinURL)
             return
         }
+        openCalendarDay()
+    }
+
+    private func openCalendarDay() {
         if let calendarURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true

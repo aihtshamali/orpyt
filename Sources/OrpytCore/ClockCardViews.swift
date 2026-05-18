@@ -100,7 +100,7 @@ public struct TimeZoneSearchProvider {
     public static func results(
         for query: String,
         suggestions: [String],
-        limit: Int = 12
+        limit: Int = 8
     ) -> [TimeZoneOption] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -389,7 +389,14 @@ public struct NextMeetingSnippetView: View {
     public let now: Date
     public let primaryTimeZoneID: String
     public let onOpenMeeting: (MeetingSnapshot) -> Void
+    public let onCreateMeeting: () -> Void
+    public let onOpenCalendar: () -> Void
     public let onRequestAccess: () -> Void
+    public let onRefreshCalendar: () -> Void
+    @Binding public var isAgendaExpanded: Bool
+    @State private var copiedMeetingID: String?
+
+    private let maxAgendaItems = 4
 
     public var body: some View {
         Group {
@@ -403,7 +410,8 @@ public struct NextMeetingSnippetView: View {
                             symbol: "calendar.badge.exclamationmark",
                             title: "Calendar Access Needed",
                             subtitle: "Continue to grant Orpyt access in Privacy settings.",
-                            showsChevron: true
+                            showsChevron: true,
+                            menu: { EmptyView() }
                         )
                     }
                 }
@@ -411,27 +419,53 @@ public struct NextMeetingSnippetView: View {
                 .orpytClickableHover(scale: 1.012, brightness: 0.014)
             case .loading:
                 cardSurface(interactive: false) {
-                    summaryRow(symbol: "calendar", title: "Checking your calendar", subtitle: "Looking for the next event.", showsChevron: false)
+                    summaryRow(
+                        symbol: "calendar",
+                        title: "Checking your calendar",
+                        subtitle: "Looking for the next event.",
+                        showsChevron: false,
+                        menu: { EmptyView() }
+                    )
                 }
             case let .loaded(snapshot):
-                if let snapshot {
-                    Button {
-                        onOpenMeeting(snapshot)
-                    } label: {
-                        cardSurface(interactive: true) {
+                if let snapshot, let nextMeeting = snapshot.nextMeeting {
+                    cardSurface(interactive: true) {
+                        VStack(alignment: .leading, spacing: 12) {
                             summaryRow(
                                 symbol: "calendar",
-                                title: snapshot.title,
-                                subtitle: meetingSubtitle(for: snapshot),
-                                showsChevron: true
+                                title: nextMeeting.title,
+                                subtitle: meetingSubtitle(for: nextMeeting),
+                                showsChevron: false,
+                                menu: {
+                                    meetingActionsMenu(snapshot: snapshot, nextMeeting: nextMeeting)
+                                    agendaToggleButton(snapshot: snapshot)
+                                }
                             )
+
+                            if isAgendaExpanded {
+                                todayPlanView(snapshot: snapshot)
+                            }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .onTapGesture {
+                        onOpenMeeting(nextMeeting)
+                    }
                     .orpytClickableHover(scale: 1.012, brightness: 0.014)
                 } else {
                     cardSurface(interactive: false) {
-                        summaryRow(symbol: "calendar", title: "No upcoming meetings", subtitle: "Nothing scheduled in the next 24 hours.", showsChevron: false)
+                        VStack(alignment: .leading, spacing: 12) {
+                            summaryRow(symbol: "calendar", title: "No upcoming meetings", subtitle: "Nothing scheduled in the next 24 hours.", showsChevron: false) {
+                                meetingActionsMenu(snapshot: snapshot, nextMeeting: nil)
+                                if let snapshot {
+                                    agendaToggleButton(snapshot: snapshot)
+                                }
+                            }
+
+                            if isAgendaExpanded, let snapshot {
+                                todayPlanView(snapshot: snapshot)
+                            }
+                        }
                     }
                 }
             case .failed:
@@ -441,7 +475,8 @@ public struct NextMeetingSnippetView: View {
                             symbol: "calendar.badge.exclamationmark",
                             title: "Calendar Access Denied",
                             subtitle: "Tap to open Privacy & Security settings.",
-                            showsChevron: true
+                            showsChevron: true,
+                            menu: { EmptyView() }
                         )
                     }
                 }
@@ -451,7 +486,13 @@ public struct NextMeetingSnippetView: View {
         }
     }
 
-    private func summaryRow(symbol: String, title: String, subtitle: String, showsChevron: Bool) -> some View {
+    private func summaryRow<MenuContent: View>(
+        symbol: String,
+        title: String,
+        subtitle: String,
+        showsChevron: Bool,
+        @ViewBuilder menu: () -> MenuContent
+    ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
@@ -478,11 +519,15 @@ public struct NextMeetingSnippetView: View {
 
             Spacer(minLength: 8)
 
-            if showsChevron {
-                Image(systemName: "arrow.up.forward")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+            HStack(spacing: 8) {
+                menu()
+
+                if showsChevron {
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
             }
         }
     }
@@ -522,6 +567,182 @@ public struct NextMeetingSnippetView: View {
 
         let startTime = formatter.string(from: snapshot.startDate)
         let relative = relativeFormatter.localizedString(for: snapshot.startDate, relativeTo: now)
-        return "\(startTime) • \(relative) • \(snapshot.calendarName)"
+        return "\(startTime) • \(relative)"
+    }
+
+    @ViewBuilder
+    private func meetingActionsMenu(snapshot: CalendarAgendaSnapshot?, nextMeeting: MeetingSnapshot?) -> some View {
+        Menu {
+            if let nextMeeting {
+                if nextMeeting.hasJoinURL {
+                    Button("Join Meeting") {
+                        onOpenMeeting(nextMeeting)
+                    }
+                }
+            }
+
+            Button("New Meeting") {
+                onCreateMeeting()
+            }
+
+            Button {
+                onRefreshCalendar()
+            } label: {
+                Label("Refresh Calendar", systemImage: "arrow.clockwise")
+            }
+
+            Button("Open Calendar") {
+                onOpenCalendar()
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                )
+        }
+        .menuIndicator(.hidden)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func agendaToggleButton(snapshot: CalendarAgendaSnapshot) -> some View {
+        if !snapshot.todayAgenda.isEmpty {
+            Button {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    isAgendaExpanded.toggle()
+                }
+            } label: {
+                Image(systemName: isAgendaExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isAgendaExpanded ? "Hide Today’s Plan" : "Show Today’s Plan")
+        }
+    }
+
+    private func todayPlanView(snapshot: CalendarAgendaSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+                .overlay(Color.white.opacity(0.14))
+
+            Text("Today’s Plan")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(.secondary)
+
+            let visibleAgenda = Array(snapshot.todayAgenda.prefix(maxAgendaItems))
+            if visibleAgenda.isEmpty {
+                Text("Nothing else scheduled today.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(visibleAgenda) { meeting in
+                    HStack(alignment: .center, spacing: 8) {
+                        Button {
+                            onOpenMeeting(meeting)
+                        } label: {
+                            HStack(alignment: .center, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(meeting.title)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(meetingAgendaSubtitle(for: meeting))
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer(minLength: 8)
+
+                                Image(systemName: meeting.hasJoinURL ? "video.fill" : "calendar")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 22, height: 22)
+                            }
+                            .contentShape(Rectangle())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .orpytClickableHover(scale: 1.006, brightness: 0.01)
+                        .help(meeting.hasJoinURL ? "Join meeting" : "Open in Calendar")
+
+                        if let joinURL = meeting.joinURL {
+                            Button {
+                                copyJoinURL(joinURL, meetingID: meeting.id)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: copiedMeetingID == meeting.id ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 10, weight: .semibold))
+
+                                    if copiedMeetingID == meeting.id {
+                                        Text("Copied")
+                                            .font(.system(size: 10, weight: .semibold))
+                                    }
+                                }
+                                .foregroundStyle(copiedMeetingID == meeting.id ? Color.accentColor : Color.secondary)
+                                .frame(width: copiedMeetingID == meeting.id ? 62 : 24, height: 24, alignment: .center)
+                                .background(
+                                    Capsule()
+                                        .fill(copiedMeetingID == meeting.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                                )
+                                .animation(.spring(response: 0.22, dampingFraction: 0.82), value: copiedMeetingID)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Copy join link")
+                        }
+                    }
+                }
+            }
+
+            if snapshot.todayAgenda.count > maxAgendaItems {
+                Button("Show remaining in Calendar") {
+                    onOpenCalendar()
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 11, weight: .medium))
+            }
+        }
+    }
+
+    private func meetingAgendaSubtitle(for snapshot: MeetingSnapshot) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.timeZone = TimeZone(identifier: primaryTimeZoneID)
+        formatter.dateFormat = "h:mm a"
+
+        let relativeFormatter = RelativeDateTimeFormatter()
+        relativeFormatter.unitsStyle = .short
+
+        let startTime = formatter.string(from: snapshot.startDate)
+        let relative = snapshot.endDate > now && snapshot.startDate <= now
+            ? "Live now"
+            : relativeFormatter.localizedString(for: snapshot.startDate, relativeTo: now)
+        return "\(startTime) • \(relative)"
+    }
+
+    private func copyJoinURL(_ url: URL, meetingID: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+            copiedMeetingID = meetingID
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            guard copiedMeetingID == meetingID else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                copiedMeetingID = nil
+            }
+        }
     }
 }

@@ -2,8 +2,12 @@ import AppKit
 import Combine
 import CoreLocation
 import EventKit
+#if canImport(EventKitUI)
+import EventKitUI
+#endif
 import Security
 import ServiceManagement
+import StoreKit
 import SwiftUI
 import WeatherKit
 
@@ -28,6 +32,7 @@ struct OrpytApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusBarController?
     private let subscriptionStore = SubscriptionStore.shared
+    private let reviewStore = ReviewPromptStore.shared
     #if DIRECT_DISTRIBUTION
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -55,25 +60,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = ClockSettingsStore.shared
         let weatherStore = WeatherStore.shared
         let calendarStore = CalendarStore.shared
+        reviewStore.recordLaunch()
         subscriptionStore.prepareForLaunch()
         WelcomePeriodStore.shared.refresh()
         let shouldOpenSettingsOnLaunch = settings.performInitialSetupIfNeeded()
         _ = LaunchAtLoginManager.shared
         calendarStore.prepareForLaunch(using: settings)
+        var controller: StatusBarController?
         let settingsWindowController = SettingsWindowController(
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
-            onCheckForUpdates: { [weak self] in self?.checkForUpdates() }
+            onCheckForUpdates: { [weak self] in self?.checkForUpdates() },
+            onTestReviewPrompt: { controller?.presentReviewPromptForDebugTesting() },
+            onWindowClosed: { controller?.considerReviewPromptAfterCalmTransition() }
         )
-        statusController = StatusBarController(
+        controller = StatusBarController(
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
+            reviewStore: reviewStore,
             settingsWindowController: settingsWindowController
         )
+        statusController = controller
 
         // Set accessory policy after status item is created so the menu bar button
         // is fully allocated before the app hides its Dock icon (macOS 26 beta compat).
@@ -96,15 +107,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#if canImport(EventKitUI)
+@MainActor
+private final class CalendarMeetingEditorPresenter: NSObject, EKEventEditViewDelegate {
+    private weak var presentedController: EKEventEditViewController?
+    private let eventStore = EKEventStore()
+
+    func present(from presentingController: NSViewController?) -> Bool {
+        guard let presentingController, isCalendarWritable else { return false }
+
+        let event = EKEvent(eventStore: eventStore)
+        let startDate = Calendar.autoupdatingCurrent.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
+        let endDate = Calendar.autoupdatingCurrent.date(byAdding: .minute, value: 45, to: startDate) ?? startDate.addingTimeInterval(30 * 60)
+        event.title = "New Meeting"
+        event.startDate = startDate
+        event.endDate = endDate
+        event.calendar = eventStore.defaultCalendarForNewEvents
+
+        let controller = EKEventEditViewController()
+        controller.eventStore = eventStore
+        controller.event = event
+        controller.editViewDelegate = self
+        presentedController = controller
+        presentingController.presentAsSheet(controller)
+        return true
+    }
+
+    func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
+        controller.dismiss(nil)
+        presentedController = nil
+    }
+
+    private var isCalendarWritable: Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(macOS 14.0, *) {
+            return status == .fullAccess || status == .authorized
+        }
+        return status == .authorized
+    }
+}
+#endif
+
+private struct MeetingTitleRevealView: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(width: 170, alignment: .leading)
+    }
+}
+
 @MainActor
 private final class StatusBarController: NSObject, NSPopoverDelegate {
     private let settings: ClockSettingsStore
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
     private let subscriptionStore: SubscriptionStore
+    private let reviewStore: ReviewPromptStore
     private let settingsWindowController: SettingsWindowController
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let meetingTitlePopover = NSPopover()
     private let popoverHostingController = NSHostingController(rootView: AnyView(EmptyView()))
     nonisolated(unsafe) private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -113,18 +186,28 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     private var lastMeasuredPopoverHeight: CGFloat = 0
     nonisolated(unsafe) private var localEventMonitor: Any?
     nonisolated(unsafe) private var globalEventMonitor: Any?
+    nonisolated(unsafe) private var globalMouseMoveMonitor: Any?
+    private var activeMeetingAlert: MeetingAlertSnapshot?
+    private var activeMeetingIndicatorHitWidth: CGFloat = 0
+    private var isHoveringMeetingIndicator = false
+    private var isPresentingReviewPrompt = false
+    #if canImport(EventKitUI)
+    private let meetingEditorPresenter = CalendarMeetingEditorPresenter()
+    #endif
 
     init(
         settings: ClockSettingsStore,
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
+        reviewStore: ReviewPromptStore,
         settingsWindowController: SettingsWindowController
     ) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
+        self.reviewStore = reviewStore
         self.settingsWindowController = settingsWindowController
         super.init()
         configureStatusItem()
@@ -137,12 +220,14 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         startTimer()
         refreshWeather(force: true)
         refreshCalendar(force: true)
+        recordVisibleClockValueMomentIfNeeded()
         updateDisplay()
     }
 
     deinit {
         if let monitor = localEventMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = globalMouseMoveMonitor { NSEvent.removeMonitor(monitor) }
         timer?.invalidate()
     }
 
@@ -154,6 +239,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         static let popoverHeightPadding: CGFloat = 28
         static let weatherRefreshInterval: TimeInterval = 15 * 60
         static let calendarRefreshInterval: TimeInterval = 5 * 60
+        static let titleRevealDuration: TimeInterval = 5
     }
 
     private func configureStatusItem() {
@@ -220,6 +306,8 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.contentSize = NSSize(width: Metrics.popoverWidth, height: Metrics.popoverDefaultHeight)
         popover.delegate = self
         popover.contentViewController = popoverHostingController
+        meetingTitlePopover.behavior = .transient
+        meetingTitlePopover.animates = true
         refreshPopoverContent()
     }
 
@@ -243,12 +331,20 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             settings.$showWeatherInMenuBar.map { _ in }.eraseToAnyPublisher(),
             settings.$showWeatherLocation.map { _ in }.eraseToAnyPublisher(),
             settings.$showFeelsLikeTemperature.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingIndicatorStyle.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingWarningMode.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingWarningPreset.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingEarlyWarningMinutes.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingCriticalWarningMinutes.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingIndicatorHoverBehavior.map { _ in }.eraseToAnyPublisher(),
+            settings.$meetingIndicatorClickAction.map { _ in }.eraseToAnyPublisher(),
         ]
 
         Publishers.MergeMany(displayPublishers)
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
+                self?.recordVisibleClockValueMomentIfNeeded()
                 self?.updateDisplay()
             }
             .store(in: &cancellables)
@@ -309,7 +405,10 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         weatherStore.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.updateDisplay()
+                DispatchQueue.main.async {
+                    self?.recordWeatherValueMomentIfNeeded()
+                    self?.updateDisplay()
+                }
             }
             .store(in: &cancellables)
 
@@ -320,6 +419,16 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.refreshPopoverContent()
                 self?.refreshWeather(force: true)
                 self?.refreshCalendar(force: true)
+            }
+            .store(in: &cancellables)
+
+        calendarStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.recordCalendarValueMomentIfNeeded()
+                    self?.updateDisplay()
+                }
             }
             .store(in: &cancellables)
     }
@@ -348,6 +457,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     @objc private func togglePopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
 
+        if didClickMeetingIndicator(in: button) {
+            openActiveMeeting()
+            return
+        }
+
         if popover.isShown {
             popover.performClose(sender)
             return
@@ -373,22 +487,273 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             guard let self, self.popover.isShown else { return }
             self.popover.performClose(nil)
         }
+
+        globalMouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateMeetingIndicatorHoverState()
+            }
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        considerReviewPromptAfterCalmTransition()
+    }
+
+    func considerReviewPromptAfterCalmTransition() {
+        updateDisplay()
+        guard reviewStore.shouldPresentReviewPrompt(
+            hasActiveFriction: hasActiveReviewPromptFriction,
+            hasActiveMeetingAlert: activeMeetingAlert != nil
+        ) else {
+            return
+        }
+        presentReviewPrePrompt()
+    }
+
+    func presentReviewPromptForDebugTesting() {
+        #if DEBUG
+        presentReviewPrePrompt(isDebugTest: true)
+        #endif
+    }
+
+    private var hasActiveReviewPromptFriction: Bool {
+        if subscriptionStore.showProSheet { return true }
+        if case .needsPermission = calendarStore.state { return true }
+        if case .failed = calendarStore.state { return true }
+        if weatherFailed(.primary) || weatherFailed(.secondary) { return true }
+        return false
+    }
+
+    private func weatherFailed(_ slot: ClockSlot) -> Bool {
+        if case .failed = weatherStore.state(for: slot) {
+            return true
+        }
+        return false
+    }
+
+    private func presentReviewPrePrompt(isDebugTest: Bool = false) {
+        guard !isPresentingReviewPrompt else { return }
+        isPresentingReviewPrompt = true
+        defer { isPresentingReviewPrompt = false }
+
+        let alert = NSAlert()
+        alert.messageText = "Enjoying Orpyt?"
+        alert.informativeText = "Your valuable feedback helps motivate us to keep improving Orpyt and bring more thoughtful features for people working across time zones."
+        alert.addButton(withTitle: "Rate on the App Store")
+        alert.addButton(withTitle: "Not now")
+        alert.addButton(withTitle: "Suggest a Feature")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            reviewStore.recordReviewPromptAttempt()
+            #if DIRECT_DISTRIBUTION
+            if isDebugTest {
+                let debugAlert = NSAlert()
+                debugAlert.messageText = "Review Action Recorded"
+                debugAlert.informativeText = "This direct-download debug build can show the feedback pre-prompt, but the App Store rating sheet only appears in App Store builds."
+                debugAlert.addButton(withTitle: "OK")
+                debugAlert.runModal()
+                return
+            }
+            #endif
+            SKStoreReviewController.requestReview()
+        case .alertThirdButtonReturn:
+            reviewStore.recordPromptDismissal()
+            NSWorkspace.shared.open(ReviewPromptStore.suggestionsURL)
+        default:
+            reviewStore.recordPromptDismissal()
+        }
+    }
+
+    private func recordVisibleClockValueMomentIfNeeded() {
+        guard settings.showPrimaryClock, settings.showSecondaryClock else { return }
+        reviewStore.recordValueMoment(.twoClocksVisible)
+    }
+
+    private func recordWeatherValueMomentIfNeeded() {
+        if case .loaded = weatherStore.state(for: .primary) {
+            reviewStore.recordValueMoment(.weatherLoaded)
+            return
+        }
+
+        if case .loaded = weatherStore.state(for: .secondary) {
+            reviewStore.recordValueMoment(.weatherLoaded)
+        }
+    }
+
+    private func recordCalendarValueMomentIfNeeded() {
+        guard case let .loaded(snapshot) = calendarStore.state,
+              snapshot?.nextMeeting != nil else {
+            return
+        }
+        reviewStore.recordValueMoment(.calendarLoadedMeeting)
     }
 
     private func updateDisplay() {
         let now = Date()
-        statusItem.button?.attributedTitle = ClockFormatter.menuBarAttributedTitle(
+        activeMeetingAlert = ClockFormatter.activeMeetingAlert(
+            for: now,
+            settings: settings,
+            calendarState: calendarStore.state
+        )
+
+        let baseClockTitle = ClockFormatter.menuBarAttributedTitle(
             for: now,
             settings: settings,
             weatherStore: weatherStore
         )
-        statusItem.button?.toolTip = ClockFormatter.menuBarTooltip(
+        let baseClockTooltip = ClockFormatter.menuBarTooltip(
             for: now,
             settings: settings,
             weatherStore: weatherStore
         )
+        let menuBarFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: menuBarFont,
+            .foregroundColor: NSColor.labelColor,
+        ]
+
+        let style = settings.effectiveMeetingIndicatorStyle
+        let indicatorRender = activeMeetingAlert.flatMap {
+            ClockFormatter.meetingIndicatorRender(for: $0, style: style, font: menuBarFont)
+        }
+        activeMeetingIndicatorHitWidth = indicatorRender?.hitWidth ?? 0
+
+        let displayTitle: NSAttributedString
+        if let activeMeetingAlert {
+            switch style {
+            case .off:
+                displayTitle = baseClockTitle
+            case .fullReplace:
+                displayTitle = NSAttributedString(
+                    string: ClockFormatter.meetingFullReplaceTitle(for: activeMeetingAlert),
+                    attributes: textAttributes
+                )
+            case .tinyBadge, .imminentPill:
+                displayTitle = baseClockTitle
+            }
+        } else {
+            displayTitle = baseClockTitle
+            isHoveringMeetingIndicator = false
+            meetingTitlePopover.performClose(nil)
+        }
+
+        let finalTitle = NSMutableAttributedString()
+        if let indicatorRender {
+            finalTitle.append(indicatorRender.prefix)
+            finalTitle.append(NSAttributedString(string: " ", attributes: textAttributes))
+        }
+        finalTitle.append(displayTitle)
+
+        statusItem.button?.attributedTitle = finalTitle
+        statusItem.button?.toolTip = {
+            guard let activeMeetingAlert else { return baseClockTooltip }
+            guard !isHoveringMeetingIndicator else { return nil }
+            let timeZoneID = settings.primaryTimeZoneID
+            return ClockFormatter.meetingTooltipLine(for: activeMeetingAlert, timeZoneID: timeZoneID) + "\n" + baseClockTooltip
+        }()
         statusItem.button?.image = nil
         statusItem.button?.imagePosition = .noImage
+    }
+
+    private func updateMeetingIndicatorHoverState() {
+        guard activeMeetingAlert != nil, activeMeetingIndicatorHitWidth > 0 else {
+            if isHoveringMeetingIndicator {
+                isHoveringMeetingIndicator = false
+                updateDisplay()
+            }
+            return
+        }
+
+        guard let button = statusItem.button,
+              let buttonWindow = button.window else {
+            return
+        }
+
+        let mouseOnScreen = NSEvent.mouseLocation
+        let mouseInWindow = buttonWindow.convertPoint(fromScreen: mouseOnScreen)
+        let mouseInButton = button.convert(mouseInWindow, from: nil)
+        let isInsideButton = button.bounds.contains(mouseInButton)
+        let isHoveringIndicator = isInsideButton && mouseInButton.x <= activeMeetingIndicatorHitWidth + 6
+
+        guard isHoveringIndicator != isHoveringMeetingIndicator else { return }
+        isHoveringMeetingIndicator = isHoveringIndicator
+        if isHoveringIndicator {
+            revealActiveMeetingTitle(autoClose: false)
+        } else if !isHoveringIndicator {
+            meetingTitlePopover.performClose(nil)
+        }
+        updateDisplay()
+    }
+
+    private func didClickMeetingIndicator(in button: NSStatusBarButton) -> Bool {
+        guard activeMeetingAlert != nil, activeMeetingIndicatorHitWidth > 0,
+              let event = NSApp.currentEvent,
+              event.type == .leftMouseUp else {
+            return false
+        }
+
+        let pointInButton = button.convert(event.locationInWindow, from: nil)
+        return button.bounds.contains(pointInButton) && pointInButton.x <= activeMeetingIndicatorHitWidth + 6
+    }
+
+    private func openActiveMeeting() {
+        guard let meeting = activeMeetingAlert?.meeting else { return }
+
+        switch settings.meetingIndicatorClickAction {
+        case .openMeeting:
+            if let joinURL = meeting.joinURL {
+                NSWorkspace.shared.open(joinURL)
+            } else {
+                openCalendarApp()
+            }
+        case .openCalendar:
+            openCalendarApp()
+        case .revealTitle:
+            revealActiveMeetingTitle(autoClose: true)
+        }
+    }
+
+    private func revealActiveMeetingTitle(autoClose: Bool) {
+        guard let alert = activeMeetingAlert,
+              let button = statusItem.button else { return }
+
+        meetingTitlePopover.contentViewController = NSHostingController(
+            rootView: MeetingTitleRevealView(
+                title: alert.meeting.title,
+                subtitle: ClockFormatter.meetingCountdownText(for: alert)
+            )
+        )
+        meetingTitlePopover.contentSize = NSSize(width: 170, height: 48)
+        meetingTitlePopover.show(relativeTo: meetingIndicatorAnchorRect(in: button), of: button, preferredEdge: .minY)
+
+        guard autoClose else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Metrics.titleRevealDuration) { [weak self] in
+            self?.meetingTitlePopover.performClose(nil)
+        }
+    }
+
+    private func meetingIndicatorAnchorRect(in button: NSStatusBarButton) -> NSRect {
+        let indicatorWidth = max(4, min(activeMeetingIndicatorHitWidth, button.bounds.width))
+        let anchorX = max(0, indicatorWidth - 4)
+        return NSRect(x: anchorX, y: 0, width: 4, height: button.bounds.height)
+    }
+
+    private func presentNewMeetingEditor() {
+        #if canImport(EventKitUI)
+        if meetingEditorPresenter.present(from: popoverHostingController) {
+            return
+        }
+        #endif
+        openCalendarApp()
+    }
+
+    private func openCalendarApp() {
+        if let calendarURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: calendarURL, configuration: configuration)
+        }
     }
 
     private func openSettings(pane: SettingsPane? = nil) {
@@ -417,7 +782,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 settings?.swapTimeZones()
                 self?.weatherStore.swapClockStates()
             },
+            onCreateMeeting: { [weak self] in self?.presentNewMeetingEditor() },
             onQuit: { NSApplication.shared.terminate(nil) },
+            onReviewValueMoment: { [weak self] moment in
+                self?.reviewStore.recordValueMoment(moment)
+            },
             onContentHeightChange: { [weak self] height in
                 self?.updatePopoverSize(for: height)
             }
@@ -547,13 +916,25 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     private let navigationStore = SettingsNavigationStore()
     private let hostingController: NSHostingController<AnyView>
     private let onCheckForUpdates: () -> Void
+    private let onTestReviewPrompt: () -> Void
+    private let onWindowClosed: () -> Void
 
-    init(settings: ClockSettingsStore, weatherStore: WeatherStore, calendarStore: CalendarStore, subscriptionStore: SubscriptionStore, onCheckForUpdates: @escaping () -> Void) {
+    init(
+        settings: ClockSettingsStore,
+        weatherStore: WeatherStore,
+        calendarStore: CalendarStore,
+        subscriptionStore: SubscriptionStore,
+        onCheckForUpdates: @escaping () -> Void,
+        onTestReviewPrompt: @escaping () -> Void,
+        onWindowClosed: @escaping () -> Void
+    ) {
         self.settings = settings
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
         self.onCheckForUpdates = onCheckForUpdates
+        self.onTestReviewPrompt = onTestReviewPrompt
+        self.onWindowClosed = onWindowClosed
         hostingController = NSHostingController(rootView: AnyView(EmptyView()))
         let window = OrpytSettingsWindow(contentViewController: hostingController)
 
@@ -622,7 +1003,8 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
             navigationStore: navigationStore,
-            onCheckForUpdates: onCheckForUpdates
+            onCheckForUpdates: onCheckForUpdates,
+            onTestReviewPrompt: onTestReviewPrompt
         )
         switch settings.effectiveAppearanceMode {
         case .system:
@@ -634,5 +1016,6 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
 
     func windowWillClose(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        onWindowClosed()
     }
 }

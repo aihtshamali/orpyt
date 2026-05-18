@@ -27,8 +27,10 @@ cp "$ROOT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
 
 /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :SUEnableAutomaticChecks" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://aihtshamali.github.io/orpyt/appcast.xml" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string l7mFiSL0LO6g/76lt3/wASqfDPLyDxr/S04y4gq0tkw=" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$CONTENTS_DIR/Info.plist"
 
 if [[ -f "$ROOT_DIR/Assets/logo.png" ]]; then
   cp "$ROOT_DIR/Assets/logo.png" "$RESOURCES_DIR/logo.png"

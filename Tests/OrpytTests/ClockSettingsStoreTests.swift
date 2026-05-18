@@ -185,4 +185,42 @@ struct ClockSettingsStoreTests {
         #expect(s.primaryCustomLabel == "NYC")
         #expect(s.secondaryCustomLabel == "TYO")
     }
+
+    // MARK: Meeting alert settings
+
+    @Test("meeting indicator defaults stay calendar-friendly out of the box")
+    func meetingIndicatorDefaults() {
+        let s = ClockSettingsStore.shared
+        #expect(s.meetingIndicatorStyle == .imminentPill)
+        #expect(s.meetingWarningMode == .preset)
+        #expect(s.meetingWarningPreset == .tenAndFive)
+        #expect(s.meetingEarlyWarningMinutes == 10)
+        #expect(s.meetingCriticalWarningMinutes == 5)
+        #expect(s.meetingIndicatorHoverBehavior == .tooltipOnly)
+        #expect(s.meetingIndicatorClickAction == .openMeeting)
+    }
+
+    @Test("preset meeting warnings drive the expected early and critical minutes")
+    func presetMeetingWarningsApplyExpectedValues() {
+        let s = ClockSettingsStore.shared
+        s.meetingWarningMode = .preset
+        s.meetingWarningPreset = .fifteenAndFive
+        #expect(s.meetingEarlyWarningMinutes == 15)
+        #expect(s.meetingCriticalWarningMinutes == 5)
+
+        s.meetingWarningPreset = .fiveMinutesOnly
+        #expect(s.meetingEarlyWarningMinutes == 5)
+        #expect(s.meetingCriticalWarningMinutes == 1)
+    }
+
+    @Test("custom meeting warnings self-correct to keep early warning ahead of critical")
+    func customMeetingWarningsSelfCorrect() {
+        let s = ClockSettingsStore.shared
+        s.meetingWarningMode = .custom
+        s.meetingCriticalWarningMinutes = 25
+        s.meetingEarlyWarningMinutes = 12
+        #expect(s.meetingEarlyWarningMinutes > s.meetingCriticalWarningMinutes)
+        #expect(s.meetingEarlyWarningMinutes <= 60)
+        #expect(s.meetingCriticalWarningMinutes >= 1)
+    }
 }

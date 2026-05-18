@@ -57,6 +57,56 @@ public final class ClockSettingsStore: ObservableObject {
     @Published public var primaryWeatherLocation: String { didSet { scheduleSave() } }
     @Published public var secondaryWeatherLocation: String { didSet { scheduleSave() } }
     @Published public var showCalendarEvents: Bool { didSet { scheduleSave() } }
+    @Published public var meetingIndicatorStyle: MeetingIndicatorStyle { didSet { scheduleSave() } }
+    @Published public var meetingWarningMode: MeetingWarningMode {
+        didSet {
+            guard !isMutatingMeetingWarningState else {
+                scheduleSave()
+                return
+            }
+
+            switch meetingWarningMode {
+            case .preset:
+                apply(meetingWarningPreset: meetingWarningPreset)
+            case .custom:
+                sanitizeMeetingWarningValues(source: .initialLoad)
+            }
+
+            scheduleSave()
+        }
+    }
+    @Published public var meetingWarningPreset: MeetingWarningPreset {
+        didSet {
+            guard !isMutatingMeetingWarningState else {
+                scheduleSave()
+                return
+            }
+            apply(meetingWarningPreset: meetingWarningPreset)
+            scheduleSave()
+        }
+    }
+    @Published public var meetingEarlyWarningMinutes: Int {
+        didSet {
+            guard !isMutatingMeetingWarningState else {
+                scheduleSave()
+                return
+            }
+            sanitizeMeetingWarningValues(source: .earlyWarning)
+            scheduleSave()
+        }
+    }
+    @Published public var meetingCriticalWarningMinutes: Int {
+        didSet {
+            guard !isMutatingMeetingWarningState else {
+                scheduleSave()
+                return
+            }
+            sanitizeMeetingWarningValues(source: .criticalWarning)
+            scheduleSave()
+        }
+    }
+    @Published public var meetingIndicatorHoverBehavior: MeetingIndicatorHoverBehavior { didSet { scheduleSave() } }
+    @Published public var meetingIndicatorClickAction: MeetingIndicatorClickAction { didSet { scheduleSave() } }
     @Published public var muteScrollerSound: Bool { didSet { scheduleSave() } }
     // Stored as the enum directly — avoids silent rawValue mismatch fallback to .system
     @Published public var appearanceMode: AppearanceMode { didSet { scheduleSave() } }
@@ -65,6 +115,7 @@ public final class ClockSettingsStore: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private var saveDebounceTask: Task<Void, Never>?
+    private var isMutatingMeetingWarningState = false
 
     private init() {
         hasCompletedFirstLaunch = defaults.object(forKey: SettingsKeys.hasCompletedFirstLaunch) as? Bool ?? false
@@ -94,8 +145,17 @@ public final class ClockSettingsStore: ObservableObject {
         primaryWeatherLocation = defaults.string(forKey: SettingsKeys.primaryWeatherLocation) ?? ""
         secondaryWeatherLocation = defaults.string(forKey: SettingsKeys.secondaryWeatherLocation) ?? ""
         showCalendarEvents = defaults.object(forKey: SettingsKeys.showCalendarEvents) as? Bool ?? true
+        meetingIndicatorStyle = MeetingIndicatorStyle(rawValue: defaults.string(forKey: SettingsKeys.meetingIndicatorStyle) ?? "") ?? .imminentPill
+        meetingWarningMode = MeetingWarningMode(rawValue: defaults.string(forKey: SettingsKeys.meetingWarningMode) ?? "") ?? .preset
+        meetingWarningPreset = MeetingWarningPreset(rawValue: defaults.string(forKey: SettingsKeys.meetingWarningPreset) ?? "") ?? .tenAndFive
+        meetingEarlyWarningMinutes = defaults.object(forKey: SettingsKeys.meetingEarlyWarningMinutes) as? Int ?? 10
+        meetingCriticalWarningMinutes = defaults.object(forKey: SettingsKeys.meetingCriticalWarningMinutes) as? Int ?? 5
+        meetingIndicatorHoverBehavior = MeetingIndicatorHoverBehavior(rawValue: defaults.string(forKey: SettingsKeys.meetingIndicatorHoverBehavior) ?? "") ?? .tooltipOnly
+        meetingIndicatorClickAction = MeetingIndicatorClickAction(rawValue: defaults.string(forKey: SettingsKeys.meetingIndicatorClickAction) ?? "") ?? .openMeeting
         muteScrollerSound = defaults.object(forKey: SettingsKeys.muteScrollerSound) as? Bool ?? false
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: SettingsKeys.appearanceModeRawValue) ?? "") ?? .system
+
+        sanitizeMeetingWarningValues(source: .initialLoad)
     }
 
     public func performInitialSetupIfNeeded() -> Bool {
@@ -112,6 +172,13 @@ public final class ClockSettingsStore: ObservableObject {
         showSecondaryClock = true
         enableWeather = true
         showCalendarEvents = true
+        meetingIndicatorStyle = .imminentPill
+        meetingWarningMode = .preset
+        meetingWarningPreset = .tenAndFive
+        meetingEarlyWarningMinutes = 10
+        meetingCriticalWarningMinutes = 5
+        meetingIndicatorHoverBehavior = .tooltipOnly
+        meetingIndicatorClickAction = .openMeeting
         hasCompletedFirstLaunch = true
         return true
     }
@@ -157,6 +224,10 @@ public final class ClockSettingsStore: ObservableObject {
         showCalendarEvents && SubscriptionStore.shared.hasAccess(to: .calendar)
     }
 
+    public var effectiveMeetingIndicatorStyle: MeetingIndicatorStyle {
+        effectiveCalendarEnabled ? meetingIndicatorStyle : .off
+    }
+
     /// Sets icon visibility with mutual exclusion: ambient and weather icons cannot both be on.
     /// Both can be off (no icon). If both are requested on, weather takes priority.
     public func setMenuBarVisibility(icon: Bool, weather: Bool) {
@@ -199,8 +270,78 @@ public final class ClockSettingsStore: ObservableObject {
         defaults.set(primaryWeatherLocation, forKey: SettingsKeys.primaryWeatherLocation)
         defaults.set(secondaryWeatherLocation, forKey: SettingsKeys.secondaryWeatherLocation)
         defaults.set(showCalendarEvents, forKey: SettingsKeys.showCalendarEvents)
+        defaults.set(meetingIndicatorStyle.rawValue, forKey: SettingsKeys.meetingIndicatorStyle)
+        defaults.set(meetingWarningMode.rawValue, forKey: SettingsKeys.meetingWarningMode)
+        defaults.set(meetingWarningPreset.rawValue, forKey: SettingsKeys.meetingWarningPreset)
+        defaults.set(meetingEarlyWarningMinutes, forKey: SettingsKeys.meetingEarlyWarningMinutes)
+        defaults.set(meetingCriticalWarningMinutes, forKey: SettingsKeys.meetingCriticalWarningMinutes)
+        defaults.set(meetingIndicatorHoverBehavior.rawValue, forKey: SettingsKeys.meetingIndicatorHoverBehavior)
+        defaults.set(meetingIndicatorClickAction.rawValue, forKey: SettingsKeys.meetingIndicatorClickAction)
         defaults.set(muteScrollerSound, forKey: SettingsKeys.muteScrollerSound)
         defaults.set(appearanceMode.rawValue, forKey: SettingsKeys.appearanceModeRawValue)
+    }
+
+    private enum MeetingWarningSanitizationSource {
+        case initialLoad
+        case preset
+        case earlyWarning
+        case criticalWarning
+    }
+
+    private func apply(meetingWarningPreset: MeetingWarningPreset) {
+        guard meetingWarningMode == .preset else { return }
+        mutateMeetingWarningState {
+            meetingEarlyWarningMinutes = meetingWarningPreset.earlyWarningMinutes
+            meetingCriticalWarningMinutes = meetingWarningPreset.criticalWarningMinutes
+        }
+    }
+
+    private func sanitizeMeetingWarningValues(source: MeetingWarningSanitizationSource) {
+        var normalizedEarly = min(max(meetingEarlyWarningMinutes, 2), 60)
+        var normalizedCritical = min(max(meetingCriticalWarningMinutes, 1), 59)
+        var normalizedPreset = meetingWarningPreset
+
+        if normalizedEarly <= normalizedCritical {
+            switch source {
+            case .criticalWarning:
+                normalizedEarly = min(max(normalizedCritical + 1, 2), 60)
+            default:
+                normalizedCritical = max(1, min(normalizedEarly - 1, 59))
+            }
+        }
+
+        if meetingWarningMode == .preset {
+            if let matchingPreset = MeetingWarningPreset.allCases.first(where: {
+                $0.earlyWarningMinutes == normalizedEarly && $0.criticalWarningMinutes == normalizedCritical
+            }) {
+                normalizedPreset = matchingPreset
+            } else {
+                normalizedPreset = .tenAndFive
+                normalizedEarly = normalizedPreset.earlyWarningMinutes
+                normalizedCritical = normalizedPreset.criticalWarningMinutes
+            }
+        }
+
+        mutateMeetingWarningState {
+            if meetingEarlyWarningMinutes != normalizedEarly {
+                meetingEarlyWarningMinutes = normalizedEarly
+            }
+
+            if meetingCriticalWarningMinutes != normalizedCritical {
+                meetingCriticalWarningMinutes = normalizedCritical
+            }
+
+            if meetingWarningMode == .preset, meetingWarningPreset != normalizedPreset {
+                meetingWarningPreset = normalizedPreset
+            }
+        }
+    }
+
+    private func mutateMeetingWarningState(_ updates: () -> Void) {
+        let wasMutating = isMutatingMeetingWarningState
+        isMutatingMeetingWarningState = true
+        updates()
+        isMutatingMeetingWarningState = wasMutating
     }
 }
 
@@ -227,6 +368,13 @@ public enum SettingsKeys {
     public static let primaryWeatherLocation = "primaryWeatherLocation"
     public static let secondaryWeatherLocation = "secondaryWeatherLocation"
     public static let showCalendarEvents = "showCalendarEvents"
+    public static let meetingIndicatorStyle = "meetingIndicatorStyle"
+    public static let meetingWarningMode = "meetingWarningMode"
+    public static let meetingWarningPreset = "meetingWarningPreset"
+    public static let meetingEarlyWarningMinutes = "meetingEarlyWarningMinutes"
+    public static let meetingCriticalWarningMinutes = "meetingCriticalWarningMinutes"
+    public static let meetingIndicatorHoverBehavior = "meetingIndicatorHoverBehavior"
+    public static let meetingIndicatorClickAction = "meetingIndicatorClickAction"
     public static let muteScrollerSound = "muteScrollerSound"
     public static let appearanceModeRawValue = "appearanceModeRawValue"
 }
@@ -324,7 +472,7 @@ public enum ClockSlot: Hashable {
 public final class CalendarStore: ObservableObject {
     public static let shared = CalendarStore()
 
-    @Published private(set) var state: CalendarState = .disabled
+    @Published public private(set) var state: CalendarState = .disabled
 
     private var eventStore = EKEventStore()
     private var refreshTask: Task<Void, Never>?
@@ -418,8 +566,13 @@ public final class CalendarStore: ObservableObject {
                 .filter { !$0.isAllDay && $0.endDate > now }
                 .sorted { $0.startDate < $1.startDate }
 
-            let snapshot = events.first.map { event -> MeetingSnapshot in
+            var localCalendar = Calendar.autoupdatingCurrent
+            localCalendar.timeZone = .autoupdatingCurrent
+            let endOfDay = localCalendar.date(bySettingHour: 23, minute: 59, second: 59, of: now) ?? endDate
+
+            let snapshots = events.map { event in
                 MeetingSnapshot(
+                    id: event.calendarItemIdentifier,
                     title: { let t = event.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""; return t.isEmpty ? "Untitled meeting" : t }(),
                     startDate: event.startDate,
                     endDate: event.endDate,
@@ -427,6 +580,12 @@ public final class CalendarStore: ObservableObject {
                     joinURL: Self.extractJoinURL(from: event)
                 )
             }
+
+            let todayAgenda = snapshots.filter { $0.startDate <= endOfDay }
+            let snapshot = snapshots.isEmpty ? nil : CalendarAgendaSnapshot(
+                nextMeeting: snapshots.first,
+                todayAgenda: todayAgenda
+            )
 
             guard !Task.isCancelled else { return }
 
@@ -439,6 +598,11 @@ public final class CalendarStore: ObservableObject {
     public func disable() {
         refreshTask?.cancel()
         state = .disabled
+    }
+
+    public var nextMeeting: MeetingSnapshot? {
+        guard case let .loaded(snapshot) = state else { return nil }
+        return snapshot?.nextMeeting
     }
 
     private static func extractJoinURL(from event: EKEvent) -> URL? {

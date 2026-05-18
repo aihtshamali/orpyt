@@ -14,6 +14,7 @@ public struct SettingsView: View {
     @ObservedObject public var subscriptionStore: SubscriptionStore
     @ObservedObject public var navigationStore: SettingsNavigationStore
     public let onCheckForUpdates: () -> Void
+    public let onTestReviewPrompt: () -> Void
     @State private var primarySearchText = ""
     @State private var secondarySearchText = ""
 
@@ -23,7 +24,8 @@ public struct SettingsView: View {
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
         navigationStore: SettingsNavigationStore,
-        onCheckForUpdates: @escaping () -> Void
+        onCheckForUpdates: @escaping () -> Void,
+        onTestReviewPrompt: @escaping () -> Void = {}
     ) {
         self.settings = settings
         self.weatherStore = weatherStore
@@ -31,6 +33,7 @@ public struct SettingsView: View {
         self.subscriptionStore = subscriptionStore
         self.navigationStore = navigationStore
         self.onCheckForUpdates = onCheckForUpdates
+        self.onTestReviewPrompt = onTestReviewPrompt
     }
 
     public var body: some View {
@@ -54,7 +57,7 @@ public struct SettingsView: View {
         case .overview:
             VStack(spacing: 0) {
                 banner.padding(.horizontal, 16).padding(.top, 12)
-                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates)
+                SettingsOverviewPane(settings: settings, weatherStore: weatherStore, calendarStore: calendarStore, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates, onTestReviewPrompt: onTestReviewPrompt)
             }
             .navigationTitle("Overview")
         case .timeZones:
@@ -147,6 +150,7 @@ public struct SettingsOverviewPane: View {
     @ObservedObject public var calendarStore: CalendarStore
     @ObservedObject public var subscriptionStore: SubscriptionStore
     public let onCheckForUpdates: () -> Void
+    public let onTestReviewPrompt: () -> Void
     private let metricColumns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 2)
 
     public var body: some View {
@@ -165,7 +169,7 @@ public struct SettingsOverviewPane: View {
 
     private func overviewContent(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 22) {
-            OverviewHeroHeader(settings: settings, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates)
+            OverviewHeroHeader(settings: settings, subscriptionStore: subscriptionStore, onCheckForUpdates: onCheckForUpdates, onTestReviewPrompt: onTestReviewPrompt)
 
             if settings.isMenuBarOverflowing {
                 MenuBarOverflowBanner()
@@ -265,7 +269,7 @@ public struct SettingsOverviewPane: View {
         case .loading:
             return "Loading"
         case let .loaded(snapshot):
-            return snapshot == nil ? "No Events" : "Live"
+            return snapshot?.nextMeeting == nil ? "No Events" : "Live"
         case .failed:
             return "Unavailable"
         }
@@ -280,7 +284,7 @@ public struct SettingsOverviewPane: View {
         case .loading:
             return "Checking the next event"
         case let .loaded(snapshot):
-            return snapshot?.title ?? "Nothing in the next 24 hours"
+            return snapshot?.nextMeeting?.title ?? "Nothing in the next 24 hours"
         case let .failed(message):
             return message
         }
@@ -311,7 +315,6 @@ public struct WelcomePeriodDebugPanel: View {
                 .controlSize(.mini)
 
                 Button(subscriptionReset ? "Sub Reset ✓" : "Reset Sub") {
-                    let domain = Bundle.main.bundleIdentifier ?? "com.orpyt.app"
                     let defaults = UserDefaults.standard
                     let subKeys = ["subscription.entitlementState", "subscription.activePlanID",
                                    "subscription.renewalDate", "subscription.expirationDate",
@@ -443,6 +446,7 @@ public struct OverviewHeroHeader: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var subscriptionStore: SubscriptionStore
     public let onCheckForUpdates: () -> Void
+    public let onTestReviewPrompt: () -> Void
 
     private var systemZoneTitle: String {
         TimeZone.current.identifier.split(separator: "/").last?
@@ -469,35 +473,61 @@ public struct OverviewHeroHeader: View {
 
                 Spacer(minLength: 16)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    if subscriptionStore.supportsDirectUpdates {
-                        Button("Check for Updates…", action: onCheckForUpdates)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    } else {
-                        Button(action: { subscriptionStore.showProSheet = true }) {
-                            HStack(spacing: 5) {
-                                Image(systemName: subscriptionStore.entitlementState.hasProAccess ? "crown.fill" : "crown")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text(subscriptionStore.entitlementState.hasProAccess ? "Pro" : "Try Pro Free")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                Capsule()
-                                    .fill(Color.accentColor.opacity(0.12))
-                            )
-                            .foregroundStyle(Color.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if !appVersion.isEmpty {
-                        Text("Version \(appVersion)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+                if !appVersion.isEmpty {
+                    Text("Version \(appVersion)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
                 }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    NSWorkspace.shared.open(ReviewPromptStore.suggestionsURL)
+                } label: {
+                    Label("Suggest a Feature", systemImage: "lightbulb")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                if subscriptionStore.supportsDirectUpdates {
+                    Button {
+                        onCheckForUpdates()
+                    } label: {
+                        Label("Check for Updates…", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Button(action: { subscriptionStore.showProSheet = true }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: subscriptionStore.entitlementState.hasProAccess ? "crown.fill" : "crown")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(subscriptionStore.entitlementState.hasProAccess ? "Pro" : "Try Pro Free")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(Color.accentColor.opacity(0.12))
+                        )
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                #if DEBUG
+                Button {
+                    onTestReviewPrompt()
+                } label: {
+                    Label("Test Feedback Prompt", systemImage: "bubble.left.and.bubble.right")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                #endif
+
+                Spacer(minLength: 0)
             }
 
             HStack(spacing: 8) {
@@ -1883,15 +1913,68 @@ public struct CalendarPane: View {
                         subscriptionStore.focus(on: .calendar)
                     }
                 }
-                if case let .loaded(snapshot) = calendarStore.state, let snapshot {
+                if case let .loaded(snapshot) = calendarStore.state, let nextMeeting = snapshot?.nextMeeting {
                     LabeledContent("Next event") {
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text(snapshot.title).fontWeight(.medium)
-                            Text(snapshot.calendarName).foregroundStyle(.secondary)
+                            Text(nextMeeting.title).fontWeight(.medium)
+                            Text(nextMeeting.calendarName).foregroundStyle(.secondary)
                         }
                     }
                 }
                 Text(statusDescription)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Meeting Alerts") {
+                Picker("Indicator style", selection: $settings.meetingIndicatorStyle) {
+                    ForEach(MeetingIndicatorStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+
+                Picker("Hover behavior", selection: $settings.meetingIndicatorHoverBehavior) {
+                    ForEach(MeetingIndicatorHoverBehavior.allCases) { behavior in
+                        Text(behavior.title).tag(behavior)
+                    }
+                }
+
+                Picker("Click action", selection: $settings.meetingIndicatorClickAction) {
+                    ForEach(MeetingIndicatorClickAction.allCases) { action in
+                        Text(action.title).tag(action)
+                    }
+                }
+
+                Picker("Warning timing", selection: $settings.meetingWarningMode) {
+                    ForEach(MeetingWarningMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if settings.meetingWarningMode == .preset {
+                    Picker("Preset", selection: $settings.meetingWarningPreset) {
+                        ForEach(MeetingWarningPreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                } else {
+                    Stepper(value: $settings.meetingEarlyWarningMinutes, in: 2...60) {
+                        LabeledContent("Early warning") {
+                            Text("\(settings.meetingEarlyWarningMinutes) min")
+                        }
+                    }
+
+                    Stepper(value: $settings.meetingCriticalWarningMinutes, in: 1...59) {
+                        LabeledContent("Critical warning") {
+                            Text("\(settings.meetingCriticalWarningMinutes) min")
+                        }
+                    }
+                }
+
+                Text("The stable default keeps the clock still and puts meeting details in the tooltip. Preview Popover shows the title near the menu bar without moving the clocks.")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Today’s Plan") {
+                Text("Use the 3-dot menu on the next meeting card to reveal the rest of today’s meetings inline or jump into Calendar.")
                     .foregroundStyle(.secondary)
             }
             Section {
@@ -1909,7 +1992,11 @@ public struct CalendarPane: View {
         case .disabled: return "Calendar context is off."
         case .needsPermission: return "Turn the toggle off and back on to request access."
         case .loading: return "Looking for your next event."
-        case let .loaded(snapshot): return snapshot == nil ? "No upcoming events in the next 24 hours." : "Next meeting will appear in the popover."
+        case let .loaded(snapshot):
+            if let nextMeeting = snapshot?.nextMeeting {
+                return "Next meeting in the popover: \(nextMeeting.title)"
+            }
+            return "No upcoming events in the next 24 hours."
         case let .failed(message): return message
         }
     }

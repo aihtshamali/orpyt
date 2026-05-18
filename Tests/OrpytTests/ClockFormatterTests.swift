@@ -217,6 +217,100 @@ struct ClockFormatterTests {
         #expect(line.contains("20°C"))
     }
 
+    // MARK: Meeting alerts
+
+    @Test("activeMeetingAlert returns nil when the next meeting is outside the warning window")
+    func activeMeetingAlertReturnsNilOutsideThreshold() {
+        let settings = makeSettings()
+        settings.showCalendarEvents = true
+        settings.meetingIndicatorStyle = .imminentPill
+        settings.meetingWarningMode = .preset
+        settings.meetingWarningPreset = .tenAndFive
+
+        let meeting = MeetingSnapshot(
+            id: "meeting-outside-window",
+            title: "Design Review",
+            startDate: date.addingTimeInterval(16 * 60),
+            endDate: date.addingTimeInterval(46 * 60),
+            calendarName: "Work",
+            joinURL: nil
+        )
+        let snapshot = CalendarAgendaSnapshot(nextMeeting: meeting, todayAgenda: [meeting])
+
+        let alert = ClockFormatter.activeMeetingAlert(
+            for: date,
+            settings: settings,
+            calendarState: .loaded(snapshot)
+        )
+
+        #expect(alert == nil)
+    }
+
+    @Test("activeMeetingAlert escalates from early to critical as the meeting gets closer")
+    func activeMeetingAlertEscalates() {
+        let settings = makeSettings()
+        settings.showCalendarEvents = true
+        settings.meetingIndicatorStyle = .imminentPill
+        settings.meetingWarningMode = .preset
+        settings.meetingWarningPreset = .tenAndFive
+
+        let meeting = MeetingSnapshot(
+            id: "meeting-escalates",
+            title: "Standup",
+            startDate: date.addingTimeInterval(8 * 60),
+            endDate: date.addingTimeInterval(38 * 60),
+            calendarName: "Work",
+            joinURL: URL(string: "https://meet.example.com/standup")
+        )
+        let snapshot = CalendarAgendaSnapshot(nextMeeting: meeting, todayAgenda: [meeting])
+
+        let earlyAlert = ClockFormatter.activeMeetingAlert(
+            for: date,
+            settings: settings,
+            calendarState: .loaded(snapshot)
+        )
+        #expect(earlyAlert?.phase == .early)
+        #expect(earlyAlert?.minutesUntilStart == 8)
+        #expect(earlyAlert?.isLive == false)
+
+        let criticalDate = date.addingTimeInterval(4 * 60)
+        let criticalAlert = ClockFormatter.activeMeetingAlert(
+            for: criticalDate,
+            settings: settings,
+            calendarState: .loaded(snapshot)
+        )
+        #expect(criticalAlert?.phase == .critical)
+        #expect(criticalAlert?.minutesUntilStart == 4)
+        #expect(criticalAlert?.isLive == false)
+    }
+
+    @Test("activeMeetingAlert remains critical while a meeting is live")
+    func activeMeetingAlertStaysCriticalWhenLive() {
+        let settings = makeSettings()
+        settings.showCalendarEvents = true
+        settings.meetingIndicatorStyle = .fullReplace
+
+        let meeting = MeetingSnapshot(
+            id: "meeting-live",
+            title: "Ops Sync",
+            startDate: date.addingTimeInterval(-2 * 60),
+            endDate: date.addingTimeInterval(18 * 60),
+            calendarName: "Ops",
+            joinURL: nil
+        )
+        let snapshot = CalendarAgendaSnapshot(nextMeeting: meeting, todayAgenda: [meeting])
+
+        let alert = ClockFormatter.activeMeetingAlert(
+            for: date,
+            settings: settings,
+            calendarState: .loaded(snapshot)
+        )
+
+        #expect(alert?.phase == .critical)
+        #expect(alert?.minutesUntilStart == 0)
+        #expect(alert?.isLive == true)
+    }
+
     // MARK: Helpers
 
     private func makeSettings(
