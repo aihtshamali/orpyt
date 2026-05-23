@@ -116,44 +116,18 @@ public struct StatusPopoverView: View {
             ZStack(alignment: .topLeading) {
                 PopoverBackdrop(palette: palette)
 
-                ScrollViewReader { scrollProxy in
-                    ScrollView(isScrollEnabled ? .vertical : [], showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Color.clear
-                                .frame(height: 0)
-                                .background(PopoverScrollViewConfigurator(isScrollEnabled: isScrollEnabled))
-                                .id("popoverTop")
+                VStack(spacing: 0) {
+                    stickyHeader
 
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Orpyt")
-                                        .font(.system(size: 17, weight: .semibold))
-                                    Text("Synced across cities, weather, and work.")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
+                    ScrollViewReader { scrollProxy in
+                        ScrollView(isScrollEnabled ? .vertical : [], showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Color.clear
+                                    .frame(height: 0)
+                                    .background(PopoverScrollViewConfigurator(isScrollEnabled: isScrollEnabled))
+                                    .id("popoverTop")
 
-                                Spacer()
-
-                                HStack(spacing: 8) {
-                                    CompactGlassButton(
-                                        symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
-                                        palette: palette,
-                                        action: { toggleQuickSearch() }
-                                    )
-                                    .help(isQuickSearchPresented ? "Close search" : "Search cities")
-                                    CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
-                                        .help("Swap clocks")
-                                    CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: { onOpenSettings(nil) })
-                                        .help("Open settings")
-                                    CompactGlassButton(symbol: "power", palette: palette) {
-                                        onQuit()
-                                    }
-                                    .help("Quit Orpyt")
-                                }
-                            }
-
-                            if isQuickSearchPresented {
+                                if isQuickSearchPresented {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack(spacing: 8) {
                                         Image(systemName: "magnifyingglass")
@@ -326,7 +300,9 @@ public struct StatusPopoverView: View {
                                 WeatherAttributionFooterView(attribution: attribution)
                             }
                         }
-                        .padding(18)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 6)
+                        .padding(.bottom, 18)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
 
                         PopoverProReminderFooter(
@@ -347,6 +323,7 @@ public struct StatusPopoverView: View {
                         withAnimation(.easeInOut(duration: 0.18)) {
                             scrollProxy.scrollTo("popoverTop", anchor: .top)
                         }
+                    }
                     }
                 }
             }
@@ -392,6 +369,48 @@ public struct StatusPopoverView: View {
         }
     }
 
+
+    private var stickyHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Orpyt")
+                    .font(.system(size: 17, weight: .semibold))
+                Text("Synced across cities, weather, and work.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                CompactGlassButton(
+                    symbol: isQuickSearchPresented ? "xmark" : "magnifyingglass",
+                    palette: palette,
+                    action: { toggleQuickSearch() }
+                )
+                .help(isQuickSearchPresented ? "Close search" : "Search cities")
+                CompactGlassButton(symbol: "arrow.left.arrow.right", palette: palette, action: onSwapTimeZones)
+                    .help("Swap clocks")
+                CompactGlassButton(symbol: "slider.horizontal.3", palette: palette, action: { onOpenSettings(nil) })
+                    .help("Open settings")
+                CompactGlassButton(symbol: "power", palette: palette) {
+                    onQuit()
+                }
+                .help("Quit Orpyt")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(colorScheme == .dark ? 0.12 : 0.24))
+                .frame(height: 0.7)
+        }
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 12, x: 0, y: 6)
+        .zIndex(1)
+    }
 
 
     private var visibleSlots: [ClockSlot] {

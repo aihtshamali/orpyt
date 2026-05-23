@@ -16,7 +16,7 @@ Source: https://developer.apple.com/app-store/product-page/
 Secondary fit, if needed: `Utilities`
 
 ## Promotional Text
-`New: meeting alerts, Today’s Plan, join links, calendar refresh, country search, weather, and time scroller planning.`
+`New: a cleaner Mac-style popover with colored clock accents, a sticky toolbar, meeting alerts, Today’s Plan, and join links.`
 
 ## Keywords
 `meeting planner,timezone converter,calendar,weather,city time,global teams,scheduler,travel,agenda`
@@ -53,18 +53,14 @@ Weather is based on your configured clock locations, so you can understand the p
 Orpyt is for anyone who wants time zones to feel less like mental math and more like a quiet part of the Mac.
 
 ## What’s New
-New calendar intelligence for cross-time-zone work:
+Cleaner Mac-style calendar and time-zone workflow:
 
-- Added menu bar meeting alerts for upcoming meetings
-- Added Today’s Plan in the popover
-- Added quick join and copy-link actions for calendar meetings
-- Added a calendar refresh action
-- Added faster country search for matching cities
-- Improved meeting indicator hover behavior and spacing
-- Added a warmer, Apple-compliant feedback and review flow
-- Added a Suggest a Feature link to GitHub Discussions
-- Fixed calendar permission refresh behavior after access changes in System Settings
-- Improved time zone search result limits for a cleaner picker
+- Added colored accents for primary and secondary clocks
+- Added colored Today’s Plan meeting rows for faster scanning
+- Added a sticky Mac-style popover toolbar with native material and shadow
+- Removed the bulky persistent popover scrollbar
+- Improved next meeting card styling while keeping join/copy actions easy to reach
+- Kept calendar access read-only and local to your Mac
 
 ## App Review Notes
 Orpyt is a menu bar app. After launch, it appears in the macOS menu bar rather than as a Dock-window-first app.
@@ -87,8 +83,8 @@ Subscriptions:
 - Subscription group: `Orpyt Pro`
 - Monthly product: `com.orpyt.pro.monthly`
 - Yearly product: `com.orpyt.pro.yearly`
-- Monthly price: `$1.99/month` in the United States
-- Yearly upfront price: `$14.99/year` in the United States
+- Monthly price: `$0.99/month` in the United States
+- Yearly upfront price: `$9.99/year` in the United States
 - Both products include a 7-day free trial.
 
 Notes for direct-download builds:
