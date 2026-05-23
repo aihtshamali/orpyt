@@ -117,10 +117,11 @@ public struct StatusPopoverView: View {
                 PopoverBackdrop(palette: palette)
 
                 ScrollViewReader { scrollProxy in
-                    ScrollView(isScrollEnabled ? .vertical : [], showsIndicators: isScrollEnabled) {
+                    ScrollView(isScrollEnabled ? .vertical : [], showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 16) {
                             Color.clear
                                 .frame(height: 0)
+                                .background(PopoverScrollViewConfigurator(isScrollEnabled: isScrollEnabled))
                                 .id("popoverTop")
 
                             HStack(alignment: .center, spacing: 12) {
@@ -664,6 +665,46 @@ public struct PopoverProLockedCard: View {
         }
         .buttonStyle(.plain)
         .orpytClickableHover(scale: 1.012, brightness: 0.014)
+    }
+}
+
+private struct PopoverScrollViewConfigurator: NSViewRepresentable {
+    let isScrollEnabled: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        configure(from: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configure(from: nsView)
+    }
+
+    private func configure(from view: NSView) {
+        DispatchQueue.main.async {
+            guard let scrollView = view.firstSuperview(of: NSScrollView.self) else { return }
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.drawsBackground = false
+            scrollView.verticalScroller?.controlSize = .small
+            scrollView.verticalScroller?.alphaValue = 0
+        }
+    }
+}
+
+private extension NSView {
+    func firstSuperview<T: NSView>(of type: T.Type) -> T? {
+        var current = superview
+        while let candidate = current {
+            if let typed = candidate as? T {
+                return typed
+            }
+            current = candidate.superview
+        }
+        return nil
     }
 }
 

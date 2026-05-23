@@ -17,6 +17,7 @@ public struct ClockCardView: View {
     public let date: Date
     public let palette: PopoverPalette
     public let onTap: (() -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
 
     private var timeFontSize: CGFloat {
         if settings.showSeconds {
@@ -26,17 +27,28 @@ public struct ClockCardView: View {
         return settings.use24HourClock ? 54 : 50
     }
 
+    private var accentColor: Color {
+        PopoverAccent.clock(slot)
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center) {
                 HStack(spacing: 8) {
+                    Circle()
+                        .fill(accentColor)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: PopoverAccent.glow(accentColor, colorScheme: colorScheme), radius: 5, x: 0, y: 1)
+
                     Image(systemName: ClockFormatter.cardIconName(for: date, timeZoneID: timeZoneID, weatherState: weatherState))
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(accentColor)
+
                     Text(label.uppercased())
                         .font(.system(size: 11, weight: .bold))
                         .tracking(1.2)
+                        .foregroundStyle(.primary.opacity(0.86))
                 }
-                .foregroundStyle(.primary.opacity(0.86))
 
                 Spacer()
 
@@ -69,7 +81,8 @@ public struct ClockCardView: View {
             WeatherSummaryView(
                 slot: slot,
                 settings: settings,
-                weatherState: weatherState
+                weatherState: weatherState,
+                accentColor: accentColor
             )
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
         }
@@ -91,6 +104,43 @@ public struct ClockCardView: View {
         .onTapGesture {
             onTap?()
         }
+    }
+}
+
+private enum PopoverAccent {
+    static func clock(_ slot: ClockSlot) -> Color {
+        switch slot {
+        case .primary:
+            return Color(hex: "#9B6DFF")
+        case .secondary:
+            return Color(hex: "#3EA0FF")
+        }
+    }
+
+    static func meeting(index: Int) -> Color {
+        let colors = [
+            Color(hex: "#9B6DFF"),
+            Color(hex: "#3EA0FF"),
+            Color(hex: "#42D39B"),
+            Color(hex: "#F2A93B"),
+        ]
+        return colors[index % colors.count]
+    }
+
+    static var meetingPrimary: Color {
+        Color(hex: "#6F7CFF")
+    }
+
+    static func fill(_ color: Color, colorScheme: ColorScheme, interactive: Bool) -> Color {
+        color.opacity(colorScheme == .dark ? (interactive ? 0.26 : 0.18) : (interactive ? 0.17 : 0.11))
+    }
+
+    static func stroke(_ color: Color, colorScheme: ColorScheme, interactive: Bool) -> Color {
+        color.opacity(colorScheme == .dark ? (interactive ? 0.46 : 0.30) : (interactive ? 0.32 : 0.20))
+    }
+
+    static func glow(_ color: Color, colorScheme: ColorScheme) -> Color {
+        color.opacity(colorScheme == .dark ? 0.36 : 0.22)
     }
 }
 
@@ -299,6 +349,7 @@ public struct WeatherSummaryView: View {
     public let slot: ClockSlot
     @ObservedObject public var settings: ClockSettingsStore
     public let weatherState: WeatherState
+    public let accentColor: Color
 
     public var body: some View {
         if settings.effectiveWeatherEnabled {
@@ -314,6 +365,7 @@ public struct WeatherSummaryView: View {
                     HStack(alignment: .center, spacing: 8) {
                         Image(systemName: snapshot.symbolName)
                             .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(accentColor)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(snapshot.temperatureText) • \(snapshot.conditionText)")
                                 .font(.system(size: 12, weight: .semibold))
@@ -395,6 +447,7 @@ public struct NextMeetingSnippetView: View {
     public let onRefreshCalendar: () -> Void
     @Binding public var isAgendaExpanded: Bool
     @State private var copiedMeetingID: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     private let maxAgendaItems = 4
 
@@ -496,10 +549,15 @@ public struct NextMeetingSnippetView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PopoverAccent.meetingPrimary)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.14))
+                        .fill(PopoverAccent.fill(PopoverAccent.meetingPrimary, colorScheme: colorScheme, interactive: true))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(PopoverAccent.stroke(PopoverAccent.meetingPrimary, colorScheme: colorScheme, interactive: false), lineWidth: 0.8)
                 )
                 .padding(.top, 1)
 
@@ -541,7 +599,7 @@ public struct NextMeetingSnippetView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.accentColor.opacity(interactive ? 0.16 : 0.12),
+                                PopoverAccent.fill(PopoverAccent.meetingPrimary, colorScheme: colorScheme, interactive: interactive),
                                 Color.white.opacity(interactive ? 0.20 : 0.16),
                             ],
                             startPoint: .topLeading,
@@ -551,9 +609,9 @@ public struct NextMeetingSnippetView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.accentColor.opacity(interactive ? 0.28 : 0.18), lineWidth: interactive ? 1.0 : 0.9)
+                    .stroke(PopoverAccent.stroke(PopoverAccent.meetingPrimary, colorScheme: colorScheme, interactive: interactive), lineWidth: interactive ? 1.0 : 0.9)
             )
-            .shadow(color: Color.accentColor.opacity(interactive ? 0.10 : 0.04), radius: interactive ? 12 : 6, x: 0, y: interactive ? 7 : 3)
+            .shadow(color: PopoverAccent.glow(PopoverAccent.meetingPrimary, colorScheme: colorScheme).opacity(interactive ? 1 : 0.45), radius: interactive ? 12 : 6, x: 0, y: interactive ? 7 : 3)
     }
 
     private func meetingSubtitle(for snapshot: MeetingSnapshot) -> String {
@@ -647,12 +705,18 @@ public struct NextMeetingSnippetView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(visibleAgenda) { meeting in
+                ForEach(Array(visibleAgenda.enumerated()), id: \.element.id) { index, meeting in
+                    let rowAccent = PopoverAccent.meeting(index: index)
                     HStack(alignment: .center, spacing: 8) {
                         Button {
                             onOpenMeeting(meeting)
                         } label: {
                             HStack(alignment: .center, spacing: 10) {
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(rowAccent)
+                                    .frame(width: 5, height: 30)
+                                    .shadow(color: PopoverAccent.glow(rowAccent, colorScheme: colorScheme), radius: 4, x: 0, y: 1)
+
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(meeting.title)
                                         .font(.system(size: 12, weight: .medium))
@@ -667,8 +731,12 @@ public struct NextMeetingSnippetView: View {
 
                                 Image(systemName: meeting.hasJoinURL ? "video.fill" : "calendar")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(rowAccent)
                                     .frame(width: 22, height: 22)
+                                    .background(
+                                        Circle()
+                                            .fill(PopoverAccent.fill(rowAccent, colorScheme: colorScheme, interactive: false))
+                                    )
                             }
                             .contentShape(Rectangle())
                             .frame(maxWidth: .infinity, alignment: .leading)
