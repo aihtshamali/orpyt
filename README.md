@@ -154,6 +154,12 @@ Every detail — from spacing to animation — is intentional.
 
 ---
 
+## Built by Codtronix
+
+Orpyt is designed, engineered, and maintained by Codtronix. Read the [Orpyt engineering case study](https://codtronix.com/work/orpyt-dual-menu-bar-clock/) for the product decisions behind its menu bar experience, time-zone model, weather context, calendar-aware planning, and native macOS delivery.
+
+---
+
 ## Contributing
 
 Contributions are welcome.
