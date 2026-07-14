@@ -149,9 +149,9 @@ public enum SubscriptionPlanID: String, CaseIterable, Identifiable, Codable {
     public var fallbackPriceText: String {
         switch self {
         case .monthly:
-            return "$1.99 / month"
+            return "$0.99 / month"
         case .yearly:
-            return "$14.99 / year"
+            return "$9.99 / year"
         }
     }
 }
