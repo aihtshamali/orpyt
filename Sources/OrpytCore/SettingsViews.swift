@@ -5,6 +5,8 @@ import EventKit
 import Security
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
+@preconcurrency import UserNotifications
 import WeatherKit
 
 public struct SettingsView: View {
@@ -12,6 +14,8 @@ public struct SettingsView: View {
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
     @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var agentStore: AgentActivityStore
+    @ObservedObject public var integrationManager: AgentIntegrationManager
     @ObservedObject public var navigationStore: SettingsNavigationStore
     public let onCheckForUpdates: () -> Void
     public let onTestReviewPrompt: () -> Void
@@ -23,6 +27,8 @@ public struct SettingsView: View {
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
+        agentStore: AgentActivityStore,
+        integrationManager: AgentIntegrationManager,
         navigationStore: SettingsNavigationStore,
         onCheckForUpdates: @escaping () -> Void,
         onTestReviewPrompt: @escaping () -> Void = {}
@@ -31,6 +37,8 @@ public struct SettingsView: View {
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
+        self.agentStore = agentStore
+        self.integrationManager = integrationManager
         self.navigationStore = navigationStore
         self.onCheckForUpdates = onCheckForUpdates
         self.onTestReviewPrompt = onTestReviewPrompt
@@ -38,16 +46,34 @@ public struct SettingsView: View {
 
     public var body: some View {
         NavigationSplitView {
-            List(SettingsPane.allCases, selection: $navigationStore.selectedPane) { pane in
-                Label(pane.rawValue, systemImage: pane.icon)
-                    .tag(pane)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-            .listStyle(.sidebar)
+            settingsSidebar
         } detail: {
             detailView(for: navigationStore.selectedPane)
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    @ViewBuilder
+    private var settingsSidebar: some View {
+        #if os(macOS)
+        List(SettingsPane.allCases, selection: $navigationStore.selectedPane) { pane in
+            Label(pane.rawValue, systemImage: pane.icon)
+                .tag(pane)
+        }
+        .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+        .listStyle(.sidebar)
+        #else
+        List(SettingsPane.allCases) { pane in
+            Button {
+                navigationStore.selectedPane = pane
+            } label: {
+                Label(pane.rawValue, systemImage: pane.icon)
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(navigationStore.selectedPane == pane ? Color.accentColor.opacity(0.12) : Color.clear)
+        }
+        .listStyle(.sidebar)
+        #endif
     }
 
     @ViewBuilder
@@ -67,11 +93,16 @@ public struct SettingsView: View {
             }
             .navigationTitle("Time Zones")
         case .menuBar:
+            #if os(macOS)
             VStack(spacing: 0) {
                 banner.padding(.horizontal, 16).padding(.top, 12)
-                MenuBarPane(settings: settings, subscriptionStore: subscriptionStore)
+                MenuBarPane(settings: settings, subscriptionStore: subscriptionStore, navigationStore: navigationStore)
             }
             .navigationTitle("Menu Bar")
+            #else
+            DashboardDisplayPane(settings: settings)
+                .navigationTitle("Dashboard Layout")
+            #endif
         case .details:
             VStack(spacing: 0) {
                 banner.padding(.horizontal, 16).padding(.top, 12)
@@ -84,6 +115,12 @@ public struct SettingsView: View {
                 CalendarPane(settings: settings, calendarStore: calendarStore, subscriptionStore: subscriptionStore, navigationStore: navigationStore)
             }
             .navigationTitle("Calendar")
+        case .agents:
+            VStack(spacing: 0) {
+                banner.padding(.horizontal, 16).padding(.top, 12)
+                AgentPulseSettingsPane(agentStore: agentStore, integrationManager: integrationManager)
+            }
+            .navigationTitle("AI Agents (Beta)")
         case .weather:
             VStack(spacing: 0) {
                 banner.padding(.horizontal, 16).padding(.top, 12)
@@ -113,10 +150,19 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
     case menuBar = "Menu Bar"
     case details = "Clock Details"
     case calendar = "Calendar"
+    case agents = "AI Agents (Beta)"
     case weather = "Weather"
     case appearance = "Appearance"
 
     public var id: String { rawValue }
+
+    public static var allCases: [SettingsPane] {
+        #if os(macOS)
+        return [.overview, .timeZones, .menuBar, .details, .calendar, .agents, .weather, .appearance]
+        #else
+        return [.overview, .timeZones, .details, .calendar, .agents, .weather, .appearance]
+        #endif
+    }
 
     public var icon: String {
         switch self {
@@ -125,6 +171,7 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
         case .menuBar: return "menubar.rectangle"
         case .details: return "list.bullet.rectangle.portrait"
         case .calendar: return "calendar"
+        case .agents: return "sparkles.rectangle.stack"
         case .weather: return "cloud.sun"
         case .appearance: return "square.3.layers.3d.top.filled"
         }
@@ -137,8 +184,435 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
         case .menuBar: return "Compact top bar behavior"
         case .details: return "Metadata and badges"
         case .calendar: return "Read-only next meeting context"
+        case .agents: return "Codex and Claude task awareness"
         case .weather: return "Weather synced with each clock"
         case .appearance: return "Popover mood and polish"
+        }
+    }
+}
+
+public struct AgentPulseSettingsPane: View {
+    @ObservedObject public var agentStore: AgentActivityStore
+    @ObservedObject public var integrationManager: AgentIntegrationManager
+    @State private var iconImportError: String?
+
+    public init(agentStore: AgentActivityStore, integrationManager: AgentIntegrationManager) {
+        self.agentStore = agentStore
+        self.integrationManager = integrationManager
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            stickyPreview
+
+            Divider().opacity(0.55)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    MenuBarSettingsCard(
+                        icon: "sparkles.rectangle.stack",
+                        title: "Agent Pulse",
+                        subtitle: "Private, local task awareness for Codex and Claude."
+                    ) {
+                        VStack(spacing: 0) {
+                            MenuBarToggleRow(
+                                title: "Enable Agent Pulse",
+                                subtitle: "Track provider, project folder, state, and timing metadata locally.",
+                                systemImage: "power",
+                                isOn: $agentStore.isEnabled
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarToggleRow(
+                                title: "Show task details in popover",
+                                subtitle: "Include up to three active or unread tasks when you open Orpyt.",
+                                systemImage: "rectangle.bottomhalf.inset.filled",
+                                isOn: $agentStore.showTaskDetailsInPopover
+                            )
+                            .disabled(!agentStore.isEnabled)
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "bell.badge",
+                        title: "Notifications",
+                        subtitle: "Choose which task transitions should interrupt you."
+                    ) {
+                        VStack(spacing: 0) {
+                            MenuBarToggleRow(
+                                title: "Attention alerts",
+                                subtitle: "Notify when an agent needs a decision or input.",
+                                systemImage: "exclamationmark.bubble",
+                                isOn: $agentStore.attentionNotificationsEnabled
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarToggleRow(
+                                title: "Completion alerts",
+                                subtitle: "Notify when an agent finishes a task.",
+                                systemImage: "checkmark.circle",
+                                isOn: $agentStore.completionNotificationsEnabled
+                            )
+                        }
+                        .disabled(!agentStore.isEnabled)
+                    }
+
+                    ForEach(AgentProvider.allCases) { provider in
+                        integrationCard(provider)
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "paintpalette",
+                        title: "Indicator Appearance",
+                        subtitle: "Match each menu-bar state to an icon you can recognize at a glance."
+                    ) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(AgentIndicatorAppearanceStatus.allCases) { status in
+                                indicatorAppearanceRow(status)
+                                if status != AgentIndicatorAppearanceStatus.allCases.last {
+                                    MenuBarSettingsDivider()
+                                }
+                            }
+                            Text("Previews disappear automatically after eight seconds and are never restored on relaunch.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .disabled(!agentStore.isEnabled)
+                    }
+
+                    let historyActivities = agentStore.activities.filter { !$0.isIndicatorPreview }
+                    if !historyActivities.isEmpty {
+                        MenuBarSettingsCard(
+                            icon: "clock.arrow.circlepath",
+                            title: "Recent Activity",
+                            subtitle: "Task state retained locally for up to seven days."
+                        ) {
+                            VStack(spacing: 0) {
+                                ForEach(historyActivities.prefix(8)) { activity in
+                                    HStack(spacing: 10) {
+                                        Image(systemName: activity.provider.systemImage)
+                                            .foregroundStyle(statusTint(activity.state))
+                                            .frame(width: 22)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(activity.projectName).font(.callout.weight(.medium))
+                                            Text("\(activity.sourceTitle) · \(activity.state.title)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Text(activity.updatedAt, style: .relative)
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .frame(minHeight: 44)
+                                    if activity.id != historyActivities.prefix(8).last?.id {
+                                        MenuBarSettingsDivider()
+                                    }
+                                }
+                                HStack {
+                                    Spacer()
+                                    Button("Clear finished") { agentStore.clearFinished() }
+                                        .controlSize(.small)
+                                }
+                                .padding(.top, 8)
+                            }
+                        }
+                    }
+
+                    Label("Prompts, responses, commands, transcript files, and source code are never included in Agent Pulse events.", systemImage: "lock.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { integrationManager.refresh() }
+        .onChange(of: agentStore.isEnabled) { enabled in
+            guard enabled else { return }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+        .alert("Couldn’t use that icon", isPresented: Binding(
+            get: { iconImportError != nil },
+            set: { if !$0 { iconImportError = nil } }
+        )) {
+            Button("OK", role: .cancel) { iconImportError = nil }
+        } message: {
+            Text(iconImportError ?? "Choose a different image.")
+        }
+    }
+
+    private var stickyPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Agent Pulse Preview")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("A live summary of what Orpyt will show in the menu bar and popover.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Label(agentPreviewTitle, systemImage: agentPreviewIcon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(agentPreviewColor)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.primary.opacity(0.055)))
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: agentPreviewIcon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(agentPreviewColor)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(agentPreviewColor.opacity(agentStore.isEnabled ? 0.12 : 0.05)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Menu-bar status stays compact")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(agentStore.showTaskDetailsInPopover
+                         ? "Task details appear below your clocks when activity is available."
+                         : "Task details stay hidden; indicators and notifications still work.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+            )
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+        .background(.bar)
+        .shadow(color: .black.opacity(0.10), radius: 12, y: 3)
+    }
+
+    private var agentPreviewTitle: String {
+        guard agentStore.isEnabled else { return "Off" }
+        switch agentStore.indicatorState {
+        case .hidden: return "Idle"
+        case .running: return "Running"
+        case .attention: return "Needs attention"
+        case .completed: return "Completed"
+        case .failed: return "Failed"
+        }
+    }
+
+    private var agentPreviewIcon: String {
+        guard agentStore.isEnabled else { return "pause.circle" }
+        switch agentStore.indicatorState {
+        case .hidden: return "moon.zzz"
+        case .running: return agentStore.indicatorIcon(for: .running)
+        case .attention: return agentStore.indicatorIcon(for: .attention)
+        case .completed: return agentStore.indicatorIcon(for: .completed)
+        case .failed: return agentStore.indicatorIcon(for: .failed)
+        }
+    }
+
+    private var agentPreviewColor: Color {
+        guard agentStore.isEnabled else { return .secondary }
+        switch agentStore.indicatorState {
+        case .hidden: return .secondary
+        case .running: return .purple
+        case .attention: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        }
+    }
+
+    @ViewBuilder
+    private func integrationCard(_ provider: AgentProvider) -> some View {
+        let state = integrationManager.states[provider] ?? .notInstalled
+        MenuBarSettingsCard(
+            icon: provider.systemImage,
+            title: provider == .codex ? "Codex CLI & Desktop" : provider.title,
+            subtitle: "Connect Orpyt to receive local task-state events."
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label(state.title, systemImage: statusSymbol(state))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(statusColor(state))
+                    Spacer()
+                }
+                Text(integrationManager.configPath(for: provider))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                if provider == .codex, state == .installed || state == .receivingEvents {
+                    Text("In Codex CLI, open /hooks and trust the Orpyt definitions once. The same user-level hooks cover supported local Codex/ChatGPT desktop tasks.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if case let .malformedConfiguration(message) = state {
+                    Text(message).font(.caption).foregroundStyle(.red)
+                }
+                if integrationManager.lastErrorProvider == provider,
+                   let error = integrationManager.lastError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+
+                if !integrationManager.supportsAutomaticSetup {
+                    Text("The App Store sandbox cannot edit this hidden configuration file. Copy the configuration, add it at the path above, then restart the agent.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    if integrationManager.supportsAutomaticSetup {
+                        Button(state == .notInstalled ? "Install integration" : "Reinstall") {
+                            agentStore.isEnabled = true
+                            _ = integrationManager.install(provider)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Copy manual configuration") {
+                            copyConfiguration(for: provider)
+                        }
+                    } else {
+                        Button("Copy configuration") {
+                            copyConfiguration(for: provider)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if integrationManager.supportsAutomaticSetup, state != .notInstalled {
+                        Button("Uninstall", role: .destructive) { _ = integrationManager.uninstall(provider) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func copyConfiguration(for provider: AgentProvider) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(integrationManager.manualConfiguration(for: provider), forType: .string)
+        agentStore.isEnabled = true
+    }
+
+    private func statusTint(_ state: AgentActivityState) -> Color {
+        switch state {
+        case .running: return .purple
+        case .needsAttention: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        case .stale: return .secondary
+        }
+    }
+
+    private func indicatorAppearanceRow(_ status: AgentIndicatorAppearanceStatus) -> some View {
+        let hasCustomIcon = agentStore.customIndicatorIconFiles[status] != nil
+        return HStack(spacing: 12) {
+            Text(status.title)
+                .font(.callout.weight(.medium))
+                .frame(width: 105, alignment: .leading)
+
+            HStack(spacing: 6) {
+                ForEach(status.iconOptions, id: \.self) { icon in
+                    Button {
+                        agentStore.setIndicatorIcon(icon, for: status)
+                    } label: {
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(!hasCustomIcon && agentStore.indicatorIcon(for: status) == icon ? statusTint(status) : Color.secondary)
+                            .frame(width: 28, height: 26)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(!hasCustomIcon && agentStore.indicatorIcon(for: status) == icon ? statusTint(status).opacity(0.14) : Color.clear)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .stroke(!hasCustomIcon && agentStore.indicatorIcon(for: status) == icon ? statusTint(status).opacity(0.6) : Color.secondary.opacity(0.16))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Use \(icon) for \(status.title.lowercased())")
+                }
+            }
+
+            if let customImage = agentStore.customIndicatorImage(for: status) {
+                Image(nsImage: customImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 26, height: 26)
+                    .padding(2)
+                    .background(statusTint(status).opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(statusTint(status).opacity(0.7)))
+                    .help("Custom icon")
+            }
+
+            Spacer()
+            Button(hasCustomIcon ? "Replace…" : "Upload…") {
+                importCustomIcon(for: status)
+            }
+            .buttonStyle(.borderless)
+            if hasCustomIcon {
+                Button("Remove") {
+                    agentStore.removeCustomIndicatorIcon(for: status)
+                }
+                .buttonStyle(.borderless)
+            }
+            Button("Preview") {
+                agentStore.isEnabled = true
+                agentStore.simulate(status.eventKind)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private func importCustomIcon(for status: AgentIndicatorAppearanceStatus) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an icon for \(status.title)"
+        panel.prompt = "Use Icon"
+        panel.message = "PNG with a transparent background works best. Orpyt stores a private, normalized copy."
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try agentStore.importCustomIndicatorIcon(from: url, for: status)
+            agentStore.isEnabled = true
+            agentStore.simulate(status.eventKind)
+        } catch {
+            iconImportError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func statusTint(_ status: AgentIndicatorAppearanceStatus) -> Color {
+        switch status {
+        case .running: return .purple
+        case .attention: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        }
+    }
+
+    private func statusSymbol(_ state: AgentIntegrationState) -> String {
+        switch state {
+        case .notInstalled: return "circle"
+        case .manualSetupRequired: return "doc.on.clipboard"
+        case .installed: return "checkmark.circle"
+        case .receivingEvents: return "checkmark.circle.fill"
+        case .malformedConfiguration: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func statusColor(_ state: AgentIntegrationState) -> Color {
+        switch state {
+        case .notInstalled: return .secondary
+        case .manualSetupRequired: return .blue
+        case .installed: return .orange
+        case .receivingEvents: return .green
+        case .malformedConfiguration: return .red
         }
     }
 }
@@ -904,7 +1378,7 @@ public struct SubscriptionPane: View {
 
                 HStack(spacing: 16) {
                     Button("Privacy Policy") {
-                        NSWorkspace.shared.open(URL(string: "https://aihtshamali.github.io/orpyt-world-time-made-simple/privacy")!)
+                        NSWorkspace.shared.open(URL(string: "https://aihtshamali.github.io/orpyt-world-time-made-simple/privacy/")!)
                     }
                     Button("Terms of Use") {
                         NSWorkspace.shared.open(URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
@@ -1648,13 +2122,17 @@ public struct SettingsAppIconView: View {
                 .interpolation(.high)
                 .scaledToFill()
         } else {
-            Image(systemName: "clock.badge.checkmark.fill")
-                .resizable()
-                .scaledToFit()
-                .padding(size * 0.22)
-                .foregroundStyle(.tint)
-                .background(Color(nsColor: .controlBackgroundColor))
+            fallbackIcon
         }
+    }
+
+    private var fallbackIcon: some View {
+        Image(systemName: "clock.badge.checkmark.fill")
+            .resizable()
+            .scaledToFit()
+            .padding(size * 0.22)
+            .foregroundStyle(.tint)
+            .background(Color(nsColor: .controlBackgroundColor))
     }
 }
 
@@ -1669,19 +2147,23 @@ public struct OrpytClickableHoverModifier: ViewModifier {
             .brightness(isHovered ? brightness : 0)
             .animation(.easeOut(duration: 0.14), value: isHovered)
             .onHover { hovering in
+                #if os(macOS)
                 if hovering && !isHovered {
                     NSCursor.pointingHand.push()
                 } else if !hovering && isHovered {
                     NSCursor.pop()
                 }
+                #endif
 
                 isHovered = hovering
             }
             .onDisappear {
+                #if os(macOS)
                 if isHovered {
                     NSCursor.pop()
-                    isHovered = false
                 }
+                #endif
+                isHovered = false
             }
     }
 }
@@ -1694,24 +2176,20 @@ extension View {
 
 public enum AppAssetLoader {
     public static func appIconImage() -> NSImage? {
-        for fileName in ["logo.png", "logo.png", "Orpyt.icns"] {
-            if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
-               let image = NSImage(contentsOf: url) {
-                return image
-            }
-        }
-
-        return nil
+        image(named: ["logo.png", "Orpyt.icns"])
     }
 
     public static func brandImage() -> NSImage? {
-        for fileName in ["logo.png", "logo.png", "orpyt-logo.png"] {
+        image(named: ["logo.png", "orpyt-logo.png"])
+    }
+
+    private static func image(named fileNames: [String]) -> NSImage? {
+        for fileName in fileNames {
             if let url = Bundle.main.resourceURL?.appendingPathComponent(fileName),
                let image = NSImage(contentsOf: url) {
                 return image
             }
         }
-
         return nil
     }
 }
@@ -1751,10 +2229,17 @@ public struct TimeZonesPane: View {
     }
 }
 
+#if os(macOS)
 public struct MenuBarPane: View {
     @ObservedObject public var settings: ClockSettingsStore
     @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var navigationStore: SettingsNavigationStore
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
+    @State private var draggingLayoutItem: MenuBarLayoutItem?
+
+    private var hasPowerMenuBarAccess: Bool {
+        subscriptionStore.hasAccess(to: .appearance)
+    }
 
     private var iconMode: Binding<MenuBarIconMode> {
         Binding(
@@ -1781,64 +2266,704 @@ public struct MenuBarPane: View {
     }
 
     public var body: some View {
-        Form {
-            Section("Startup") {
-                Toggle(isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.setEnabled($0) })) {
-                    Text("Launch at Login")
-                    Text(launchAtLogin.statusMessage)
-                }
-                if let errorMessage = launchAtLogin.errorMessage {
-                    Text(errorMessage).foregroundStyle(.secondary)
-                }
-            }
+        VStack(spacing: 0) {
+            stickyPreview
 
-            Section("Visibility") {
-                Toggle(isOn: $settings.showPrimaryClock) {
-                    Text("Show primary clock")
-                    Text("Keep the first city visible in the menu bar.")
-                }
-                Toggle(isOn: $settings.showSecondaryClock) {
-                    Text("Show secondary clock")
-                    Text("Keep the second city visible in the menu bar.")
-                }
-            }
+            Divider().opacity(0.55)
 
-            Section("Format") {
-                Toggle(isOn: $settings.showZoneLabelInMenuBar) {
-                    Text("Show zone labels")
-                    Text("Display short city labels beside the time.")
-                }
-                Toggle(isOn: $settings.use24HourClock) {
-                    Text("Use 24-hour time")
-                    Text("Switch between 12-hour and 24-hour formats.")
-                }
-                Toggle(isOn: $settings.showSeconds) {
-                    Text("Show seconds")
-                    Text("Update the top bar every second.")
-                }
-            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if !hasPowerMenuBarAccess {
+                        powerMenuBarUpsell
+                    }
 
-            Section("Icons") {
-                Picker("Menu bar icon mode", selection: iconMode) {
-                    ForEach(MenuBarIconMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                    MenuBarSettingsCard(
+                        icon: "rectangle.3.group",
+                        title: "Layout",
+                        subtitle: "Arrange Orpyt's menu bar modules in the order you scan them."
+                    ) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(spacing: 8) {
+                                ForEach(settings.menuBarLayoutItems) { item in
+                                    MenuBarModuleDragRow(
+                                        item: item,
+                                        isDragging: draggingLayoutItem == item
+                                    )
+                                    .onDrag {
+                                        draggingLayoutItem = item
+                                        return NSItemProvider(object: item.rawValue as NSString)
+                                    }
+                                    .onDrop(
+                                        of: [UTType.text],
+                                        delegate: MenuBarLayoutDropDelegate(
+                                            targetItem: item,
+                                            draggingItem: $draggingLayoutItem,
+                                            settings: settings
+                                        )
+                                    )
+                                }
+                            }
+                            .disabled(!hasPowerMenuBarAccess)
+
+                            Text("Drag rows to reorder. The preview above updates as the order changes.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "clock",
+                        title: "Time Zones",
+                        subtitle: "Keep clock visibility and per-city time format in one place."
+                    ) {
+                        VStack(spacing: 0) {
+                            MenuBarClockPowerRow(
+                                title: "Primary",
+                                color: .purple,
+                                timeZoneID: settings.primaryTimeZoneID,
+                                isVisible: $settings.showPrimaryClock,
+                                formatOverride: $settings.primaryClockFormatOverride,
+                                isAdvancedLocked: !hasPowerMenuBarAccess
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarClockPowerRow(
+                                title: "Secondary",
+                                color: .blue,
+                                timeZoneID: settings.secondaryTimeZoneID,
+                                isVisible: $settings.showSecondaryClock,
+                                formatOverride: $settings.secondaryClockFormatOverride,
+                                isAdvancedLocked: !hasPowerMenuBarAccess
+                            )
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "slider.horizontal.3",
+                        title: "Display",
+                        subtitle: "Tune the compact text, precision, icon style, and spacing."
+                    ) {
+                        VStack(spacing: 0) {
+                            MenuBarToggleRow(
+                                title: "Zone labels",
+                                subtitle: "Show short city labels beside times.",
+                                systemImage: "textformat.size",
+                                isOn: $settings.showZoneLabelInMenuBar
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarToggleRow(
+                                title: "24-hour time",
+                                subtitle: "Default format for clocks without an override.",
+                                systemImage: "24.square",
+                                isOn: $settings.use24HourClock
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarToggleRow(
+                                title: "Seconds",
+                                subtitle: "Refresh the menu bar every second.",
+                                systemImage: "timer",
+                                isOn: $settings.showSeconds
+                            )
+                            MenuBarSettingsDivider()
+                            MenuBarPickerRow(
+                                title: "Icon mode",
+                                subtitle: iconModeHelpText,
+                                systemImage: "cloud.sun",
+                                controlWidth: 158
+                            ) {
+                                Picker("", selection: iconMode) {
+                                    ForEach(MenuBarIconMode.allCases) { mode in
+                                        Text(mode.title).tag(mode)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            MenuBarSettingsDivider()
+                            MenuBarPickerRow(
+                                title: "Separator",
+                                subtitle: "Choose how clocks are divided.",
+                                systemImage: "alternatingcurrent",
+                                controlWidth: 158
+                            ) {
+                                Picker("", selection: $settings.menuBarSeparatorStyle) {
+                                    ForEach(MenuBarSeparatorStyle.allCases) { style in
+                                        Text(style.title).tag(style)
+                                    }
+                                }
+                                .labelsHidden()
+                                .disabled(!hasPowerMenuBarAccess)
+                            }
+                            MenuBarSettingsDivider()
+                            MenuBarPickerRow(
+                                title: "Spacing",
+                                subtitle: "Keep the bar compact or give items more air.",
+                                systemImage: "arrow.left.and.right",
+                                controlWidth: 158
+                            ) {
+                                Picker("", selection: $settings.menuBarSpacing) {
+                                    ForEach(MenuBarSpacing.allCases) { spacing in
+                                        Text(spacing.title).tag(spacing)
+                                    }
+                                }
+                                .labelsHidden()
+                                .disabled(!hasPowerMenuBarAccess)
+                            }
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "calendar.badge.clock",
+                        title: "Calendar Indicator",
+                        subtitle: "Meeting alert details stay in Calendar so there is only one source of truth."
+                    ) {
+                        HStack(spacing: 12) {
+                            Label(settings.meetingIndicatorStyle.title, systemImage: "bell.badge")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Click opens \(settings.meetingIndicatorClickAction.title.lowercased()).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Configure") {
+                                navigationStore.selectedPane = .calendar
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "arrow.clockwise",
+                        title: "Refresh",
+                        subtitle: "Choose how often Orpyt checks weather and calendar updates."
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            MenuBarPickerRow(
+                                title: "Automatic updates",
+                                subtitle: refreshHelpText,
+                                systemImage: "bolt.horizontal.circle",
+                                controlWidth: 174
+                            ) {
+                                Picker("", selection: $settings.refreshIntervalPreference) {
+                                    ForEach(RefreshIntervalPreference.allCases) { interval in
+                                        Text(interval.title).tag(interval)
+                                    }
+                                }
+                                .labelsHidden()
+                                .disabled(!hasPowerMenuBarAccess)
+                            }
+                        }
+                    }
+
+                    MenuBarSettingsCard(
+                        icon: "power",
+                        title: "System",
+                        subtitle: "Keep Orpyt ready when your Mac starts."
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            MenuBarToggleRow(
+                                title: "Launch at Login",
+                                subtitle: launchAtLogin.statusMessage,
+                                systemImage: "macwindow.on.rectangle",
+                                isOn: Binding(get: { launchAtLogin.isEnabled }, set: { launchAtLogin.setEnabled($0) })
+                            )
+                            if let errorMessage = launchAtLogin.errorMessage {
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 32)
+                            }
+                        }
                     }
                 }
-
-                if !subscriptionStore.hasAccess(to: .weather) {
-                    Text("Weather icons are part of Orpyt Pro.")
-                        .foregroundStyle(.secondary)
-                } else if !settings.enableWeather {
-                    Text("Turn on live weather in the Weather pane to use weather icons in the menu bar.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Choose between no icon, ambient day/night icons, or live weather icons.")
-                        .foregroundStyle(.secondary)
-                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
             }
         }
-        .formStyle(.grouped)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { launchAtLogin.refresh() }
+    }
+
+    private var stickyPreview: some View {
+        SwiftUI.TimelineView(.periodic(from: .now, by: settings.showSeconds ? 1.0 : 60.0)) { context in
+            PowerMenuBarPreview(
+                settings: settings,
+                now: context.date,
+                isLocked: !hasPowerMenuBarAccess,
+                onMeetingIndicatorClick: {
+                    navigationStore.selectedPane = .calendar
+                }
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
+            .background(.bar)
+            .shadow(color: .black.opacity(0.10), radius: 12, y: 3)
+        }
+    }
+
+    private var powerMenuBarUpsell: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "crown.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.accentColor.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Power Menu Bar is part of Orpyt Pro.")
+                    .fontWeight(.semibold)
+                Text("Basic visibility, labels, default time format, and icon mode stay available. Pro unlocks ordering, spacing, per-clock format, and refresh controls.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Unlock Pro") {
+                subscriptionStore.focus(on: .appearance)
+            }
+            .controlSize(.small)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.accentColor.opacity(0.09))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.20), lineWidth: 1)
+        )
+    }
+
+    private var iconModeHelpText: String {
+        if !subscriptionStore.hasAccess(to: .weather) {
+            return "Weather icons unlock with Orpyt Pro."
+        }
+
+        if !settings.enableWeather {
+            return "Turn on live weather in Weather to use weather icons."
+        }
+
+        return "Choose no icon, an ambient icon, or live weather."
+    }
+
+    private var refreshHelpText: String {
+        switch settings.refreshIntervalPreference {
+        case .automatic:
+            return "Weather every 15 minutes, calendar every 5 minutes."
+        default:
+            return "Use a single cadence for weather and calendar checks."
+        }
+    }
+
+}
+
+private struct PowerMenuBarPreview: View {
+    @ObservedObject var settings: ClockSettingsStore
+    @ObservedObject private var agentStore = AgentActivityStore.shared
+    let now: Date
+    let isLocked: Bool
+    let onMeetingIndicatorClick: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Menu Bar Preview")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Live preview of the Orpyt-owned items.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Label(isLocked ? "Pro layout locked" : "Live", systemImage: isLocked ? "lock.fill" : "waveform.path.ecg")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isLocked ? Color.accentColor : .secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.primary.opacity(0.055)))
+            }
+
+            HStack(spacing: 0) {
+                ForEach(Array(visiblePreviewItems.enumerated()), id: \.element) { index, item in
+                    previewItem(for: item)
+                    if index < visiblePreviewItems.count - 1 {
+                        Text(settings.effectiveMenuBarSeparatorStyle.symbol)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                            .padding(.horizontal, settings.effectiveMenuBarSpacing == .comfortable ? 8 : 5)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(menuBarCapsuleBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.accentColor.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: 1)
+            )
+            .shadow(color: Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 12, y: 2)
+            .opacity(isLocked ? 0.78 : 1)
+        }
+    }
+
+    private var menuBarCapsuleBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: colorScheme == .dark
+                        ? [Color.white.opacity(0.10), Color.white.opacity(0.045)]
+                        : [Color.white.opacity(0.76), Color(nsColor: .controlBackgroundColor).opacity(0.72)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+    }
+
+    private var visiblePreviewItems: [MenuBarLayoutItem] {
+        settings.menuBarLayoutItems.filter { item in
+            switch item {
+            case .agentIndicator:
+                // The layout preview represents configured positions, not only
+                // items that happen to be live at this instant. Keep the slot
+                // visible here while the real menu bar may still hide it at idle.
+                return true
+            case .meetingIndicator:
+                return settings.meetingIndicatorStyle != .off
+            case .primaryClock:
+                return settings.showPrimaryClock
+            case .secondaryClock:
+                return settings.showSecondaryClock
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func previewItem(for item: MenuBarLayoutItem) -> some View {
+        switch item {
+        case .agentIndicator:
+            Image(systemName: agentPreviewIcon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(agentPreviewColor)
+                .help("Agent Pulse: \(agentPreviewTitle)")
+        case .meetingIndicator:
+            Button(action: onMeetingIndicatorClick) {
+                Text("Now")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: [.red, .orange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
+                    .shadow(color: .red.opacity(0.16), radius: 5, y: 1)
+            }
+            .buttonStyle(.plain)
+            .help("Open meeting alert settings")
+        case .primaryClock:
+            previewClock(
+                accent: .purple,
+                icon: settings.showWeatherInMenuBar ? "cloud.sun.fill" : "clock",
+                text: clockPreview(slot: .primary)
+            )
+        case .secondaryClock:
+            previewClock(
+                accent: .blue,
+                icon: settings.showWeatherInMenuBar ? "cloud.fill" : "clock",
+                text: clockPreview(slot: .secondary)
+            )
+        }
+    }
+
+    private var agentPreviewTitle: String {
+        switch agentStore.indicatorState {
+        case .hidden: return "Idle"
+        case .running: return "Running"
+        case .attention: return "Needs attention"
+        case .completed: return "Completed"
+        case .failed: return "Failed"
+        }
+    }
+
+    private var agentPreviewIcon: String {
+        switch agentStore.indicatorState {
+        case .hidden: return "moon.zzz"
+        case .running: return agentStore.indicatorIcon(for: .running)
+        case .attention: return agentStore.indicatorIcon(for: .attention)
+        case .completed: return agentStore.indicatorIcon(for: .completed)
+        case .failed: return agentStore.indicatorIcon(for: .failed)
+        }
+    }
+
+    private var agentPreviewColor: Color {
+        switch agentStore.indicatorState {
+        case .hidden: return .secondary
+        case .running: return .purple
+        case .attention: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        }
+    }
+
+    private func previewClock(accent: Color, icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(accent)
+                .frame(width: 6, height: 6)
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(accent)
+            Text(text)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.primary.opacity(colorScheme == .dark ? 0.11 : 0.055)))
+    }
+
+    private func clockPreview(slot: ClockSlot) -> String {
+        let timeZoneID = slot == .primary ? settings.primaryTimeZoneID : settings.secondaryTimeZoneID
+        let customLabel = slot == .primary ? settings.primaryCustomLabel : settings.secondaryCustomLabel
+        let formatOverride = slot == .primary ? settings.primaryClockFormatOverride : settings.secondaryClockFormatOverride
+        let label = settings.displayLabel(for: timeZoneID, customLabel: customLabel)
+        let time = ClockFormatter.timeText(
+            for: now,
+            timeZoneID: timeZoneID,
+            settings: settings,
+            formatOverride: formatOverride
+        )
+        return settings.showZoneLabelInMenuBar ? "\(label) \(time)" : time
+    }
+}
+
+private struct MenuBarModuleDragRow: View {
+    let item: MenuBarLayoutItem
+    let isDragging: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 18)
+
+            Image(systemName: item.systemImageName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.11))
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .fontWeight(.medium)
+                Text(item.compactTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(isDragging ? 0.10 : 0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(isDragging ? 0.13 : 0.07), lineWidth: 1)
+        )
+    }
+}
+
+private struct MenuBarLayoutDropDelegate: DropDelegate {
+    let targetItem: MenuBarLayoutItem
+    @Binding var draggingItem: MenuBarLayoutItem?
+    let settings: ClockSettingsStore
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingItem,
+              draggingItem != targetItem,
+              let fromIndex = settings.menuBarLayoutItems.firstIndex(of: draggingItem),
+              let toIndex = settings.menuBarLayoutItems.firstIndex(of: targetItem) else {
+            return
+        }
+
+        var items = settings.menuBarLayoutItems
+        withAnimation(.snappy(duration: 0.18)) {
+            items.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+            )
+            settings.setMenuBarLayoutItems(items)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingItem = nil
+        return true
+    }
+
+    func dropExited(info: DropInfo) {
+        if info.location == .zero {
+            draggingItem = nil
+        }
+    }
+}
+
+private struct MenuBarClockPowerRow: View {
+    let title: String
+    let color: Color
+    let timeZoneID: String
+    @Binding var isVisible: Bool
+    @Binding var formatOverride: MenuBarClockFormatOverride
+    let isAdvancedLocked: Bool
+
+    private var locationTitle: String {
+        TimeZoneCatalog.option(for: timeZoneID)?.displayName ?? timeZoneID
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(locationTitle)
+                    .fontWeight(.medium)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("", selection: $formatOverride) {
+                ForEach(MenuBarClockFormatOverride.allCases) { format in
+                    Text(format.title).tag(format)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 142)
+            .disabled(isAdvancedLocked)
+            Toggle("", isOn: $isVisible)
+                .labelsHidden()
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct MenuBarSettingsCard<Content: View>: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.12))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            content
+                .padding(.leading, 2)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+    }
+}
+
+private struct MenuBarToggleRow: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.medium)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 16)
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct MenuBarPickerRow<Control: View>: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let controlWidth: CGFloat
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.medium)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 16)
+            control
+                .frame(width: controlWidth)
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct MenuBarSettingsDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, 32)
     }
 }
 
@@ -1858,6 +2983,50 @@ private enum MenuBarIconMode: String, CaseIterable, Identifiable {
         case .weather:
             return "Weather"
         }
+    }
+}
+
+#endif
+
+public struct DashboardDisplayPane: View {
+    @ObservedObject public var settings: ClockSettingsStore
+
+    public var body: some View {
+        Form {
+            Section("Visible Clocks") {
+                Toggle(isOn: $settings.showPrimaryClock) {
+                    Text("Show primary clock")
+                    Text("Keep the first city visible on the dashboard.")
+                }
+                Toggle(isOn: $settings.showSecondaryClock) {
+                    Text("Show secondary clock")
+                    Text("Keep the second city visible on the dashboard.")
+                }
+            }
+
+            Section("Dashboard Format") {
+                Toggle(isOn: $settings.showZoneLabelInMenuBar) {
+                    Text("Show zone labels")
+                    Text("Display short city labels beside compact clock previews.")
+                }
+                Toggle(isOn: $settings.use24HourClock) {
+                    Text("Use 24-hour time")
+                    Text("Switch dashboard clocks between 12-hour and 24-hour formats.")
+                }
+                Toggle(isOn: $settings.showSeconds) {
+                    Text("Show seconds")
+                    Text("Update the dashboard every second.")
+                }
+            }
+
+            Section("Time Scroller") {
+                Toggle(isOn: $settings.muteScrollerSound) {
+                    Text("Mute scroller feedback")
+                    Text("Turn off touch feedback while scrubbing time.")
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -1921,6 +3090,13 @@ public struct CalendarPane: View {
                         }
                     }
                 }
+                Picker("Meeting time zone", selection: $settings.meetingTimeZonePreference) {
+                    ForEach(MeetingTimeZonePreference.allCases) { preference in
+                        Text(preference.title).tag(preference)
+                    }
+                }
+                Text("Mac Time Zone keeps meetings tied to where you are, independent of the primary and secondary clocks.")
+                    .foregroundStyle(.secondary)
                 Text(statusDescription)
                     .foregroundStyle(.secondary)
             }
@@ -2078,7 +3254,7 @@ public struct AppearancePane: View {
                         subscriptionStore.focus(on: .appearance)
                     }
                 }
-                Text("This changes the menu bar popover only. Settings always follow macOS.")
+                Text("This changes Orpyt's clock surface only. Settings follow the system appearance.")
                     .foregroundStyle(.secondary)
             }
 
@@ -2136,11 +3312,13 @@ public struct ProLockedSettingsRow: View {
 }
 
 
+#if os(macOS)
 public final class OrpytSettingsWindow: NSWindow {
     override public func cancelOperation(_ sender: Any?) {
         close()
     }
 }
+#endif
 
 
 public struct PrimaryGlassButtonStyle: ButtonStyle {

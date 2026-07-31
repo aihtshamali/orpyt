@@ -3,7 +3,6 @@ import Combine
 import CoreLocation
 import EventKit
 import Security
-import ServiceManagement
 import SwiftUI
 import WeatherKit
 
@@ -180,6 +179,7 @@ public struct InlineTimeZoneEditorView: View {
     @Binding public var searchText: String
     public let onDone: () -> Void
     @State private var useCustomLabel: Bool
+    @State private var timeZoneFeedbackText: String?
 
     public init(
         title: String,
@@ -212,9 +212,11 @@ public struct InlineTimeZoneEditorView: View {
     }
 
     private func useCurrentTimeZone() {
-        selectedTimeZoneID = TimeZone.current.identifier
+        let currentID = TimeZone.current.identifier
+        selectedTimeZoneID = currentID
         searchText = ""
-        onDone()
+        let displayName = TimeZoneCatalog.option(for: currentID)?.displayName ?? currentID
+        timeZoneFeedbackText = "Using this Mac's time zone: \(displayName)"
     }
 
     public var body: some View {
@@ -224,14 +226,21 @@ public struct InlineTimeZoneEditorView: View {
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button(action: useCurrentTimeZone) {
-                    Image(systemName: "location.fill")
+                    Label("Use Mac Time Zone", systemImage: "location.fill")
                 }
                 .buttonStyle(SecondaryGlassButtonStyle())
                 .orpytClickableHover(scale: 1.03, brightness: 0.015)
-                .help("Use current time zone")
+                .help("Use this Mac's current time zone")
                 Button("Done", action: onDone)
                     .buttonStyle(SecondaryGlassButtonStyle())
                     .orpytClickableHover(scale: 1.03, brightness: 0.015)
+            }
+
+            if let timeZoneFeedbackText {
+                Label(timeZoneFeedbackText, systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // ── Search field ──────────────────────────────────────────────
@@ -439,7 +448,7 @@ public struct WeatherAttributionFooterView: View {
 public struct NextMeetingSnippetView: View {
     public let state: CalendarState
     public let now: Date
-    public let primaryTimeZoneID: String
+    @ObservedObject public var settings: ClockSettingsStore
     public let onOpenMeeting: (MeetingSnapshot) -> Void
     public let onCreateMeeting: () -> Void
     public let onOpenCalendar: () -> Void
@@ -615,15 +624,10 @@ public struct NextMeetingSnippetView: View {
     }
 
     private func meetingSubtitle(for snapshot: MeetingSnapshot) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
-        formatter.timeZone = TimeZone(identifier: primaryTimeZoneID)
-        formatter.dateFormat = "h:mm a"
-
         let relativeFormatter = RelativeDateTimeFormatter()
         relativeFormatter.unitsStyle = .short
 
-        let startTime = formatter.string(from: snapshot.startDate)
+        let startTime = ClockFormatter.meetingTimeText(for: snapshot, settings: settings)
         let relative = relativeFormatter.localizedString(for: snapshot.startDate, relativeTo: now)
         return "\(startTime) • \(relative)"
     }
@@ -777,22 +781,21 @@ public struct NextMeetingSnippetView: View {
                 Button("Show remaining in Calendar") {
                     onOpenCalendar()
                 }
+                #if os(macOS)
                 .buttonStyle(.link)
+                #else
+                .buttonStyle(.plain)
+                #endif
                 .font(.system(size: 11, weight: .medium))
             }
         }
     }
 
     private func meetingAgendaSubtitle(for snapshot: MeetingSnapshot) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
-        formatter.timeZone = TimeZone(identifier: primaryTimeZoneID)
-        formatter.dateFormat = "h:mm a"
-
         let relativeFormatter = RelativeDateTimeFormatter()
         relativeFormatter.unitsStyle = .short
 
-        let startTime = formatter.string(from: snapshot.startDate)
+        let startTime = ClockFormatter.meetingTimeText(for: snapshot, settings: settings)
         let relative = snapshot.endDate > now && snapshot.startDate <= now
             ? "Live now"
             : relativeFormatter.localizedString(for: snapshot.startDate, relativeTo: now)

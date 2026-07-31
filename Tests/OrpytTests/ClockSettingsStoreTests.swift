@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import OrpytCore
 
 @Suite("ClockSettingsStore", .serialized)
@@ -198,6 +199,7 @@ struct ClockSettingsStoreTests {
         #expect(s.meetingCriticalWarningMinutes == 5)
         #expect(s.meetingIndicatorHoverBehavior == .tooltipOnly)
         #expect(s.meetingIndicatorClickAction == .openMeeting)
+        #expect(s.meetingTimeZonePreference == .system)
     }
 
     @Test("preset meeting warnings drive the expected early and critical minutes")
@@ -222,5 +224,30 @@ struct ClockSettingsStoreTests {
         #expect(s.meetingEarlyWarningMinutes > s.meetingCriticalWarningMinutes)
         #expect(s.meetingEarlyWarningMinutes <= 60)
         #expect(s.meetingCriticalWarningMinutes >= 1)
+    }
+
+    // MARK: Power menu bar settings
+
+    @Test("menu bar layout sanitizes duplicate and missing items")
+    func menuBarLayoutSanitizesDuplicatesAndMissingItems() {
+        let s = ClockSettingsStore.shared
+        s.setMenuBarLayoutItems([.secondaryClock, .secondaryClock])
+        #expect(s.menuBarLayoutItems == [.secondaryClock, .agentIndicator, .meetingIndicator, .primaryClock])
+    }
+
+    @Test("moveMenuBarLayoutItems reorders modules")
+    func moveMenuBarLayoutItemsReordersModules() {
+        let s = ClockSettingsStore.shared
+        s.setMenuBarLayoutItems(MenuBarLayoutItem.defaultOrder)
+        s.moveMenuBarLayoutItems(from: IndexSet(integer: 2), to: 0)
+        #expect(s.menuBarLayoutItems == [.primaryClock, .agentIndicator, .meetingIndicator, .secondaryClock])
+    }
+
+    @Test("refresh interval preferences expose expected intervals")
+    func refreshIntervalPreferencesExposeExpectedIntervals() {
+        #expect(RefreshIntervalPreference.automatic.interval == nil)
+        #expect(RefreshIntervalPreference.oneMinute.interval == 60)
+        #expect(RefreshIntervalPreference.fiveMinutes.interval == 300)
+        #expect(RefreshIntervalPreference.fifteenMinutes.interval == 900)
     }
 }

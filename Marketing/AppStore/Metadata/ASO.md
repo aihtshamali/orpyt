@@ -19,7 +19,7 @@ Secondary fit, if needed: `Utilities`
 `New: a cleaner Mac-style popover with colored clock accents, a sticky toolbar, meeting alerts, Today’s Plan, and join links.`
 
 ## Keywords
-`meeting planner,timezone converter,calendar,weather,city time,global teams,scheduler,travel,agenda`
+`world clock,menu bar,time zone,dual clock,meeting planner,timezone converter,city time,global teams,scheduler`
 
 ## Description
 Orpyt is a native macOS menu bar clock with calendar intelligence for people working across time zones.
@@ -108,13 +108,15 @@ Tracking: `No`
 
 ## Support And URLs
 Support URL:
-`https://github.com/aihtshamali/orpyt/discussions`
+`https://aihtshamali.github.io/orpyt-world-time-made-simple/support`
 
 Marketing URL:
-`https://github.com/aihtshamali/orpyt`
+`https://aihtshamali.github.io/orpyt-world-time-made-simple/`
 
 Privacy Policy URL:
-`Publish Marketing/AppStore/Metadata/PrivacyPolicy.md and paste the public URL here before submission.`
+`https://aihtshamali.github.io/orpyt-world-time-made-simple/privacy`
+
+Note: as of 2026-07-31 this URL returns HTTP 404 on direct fetch because GitHub Pages only serves `dist/index.html` as `404.html` (status stays 404; client-side router never gets a chance to run for non-browser fetchers). Fixed in the `orpyt-world-time-made-simple` repo by generating real `dist/privacy/index.html`, `dist/terms/index.html`, `dist/support/index.html` files in the Pages deploy workflow so these paths return HTTP 200. Re-deploy that site and re-verify with `curl -I` before pasting this URL into App Store Connect.
 
 ## Screenshot Captions
 1. `Two time zones, always visible`

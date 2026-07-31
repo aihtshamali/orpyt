@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://apps.apple.com/app/orpyt/id6744642680"><img src="https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?logo=apple" alt="Download on the App Store"></a>
+  <a href="https://apps.apple.com/us/app/orpyt-dual-menu-bar-clock/id6765900155?mt=12"><img src="https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?logo=apple" alt="Download on the App Store"></a>
+  <a href="https://aihtshamali.github.io/orpyt-world-time-made-simple/"><img src="https://img.shields.io/badge/Website-orpyt-111111" alt="Website"></a>
   <a href="https://github.com/aihtshamali/orpyt/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%2013%2B-111111" alt="Platform">
   <img src="https://img.shields.io/badge/status-actively%20maintained-2ea043" alt="Status">
@@ -33,7 +34,9 @@
 
 Orpyt is available on the **Mac App Store** with a 7-day free trial.
 
-**[Download on the Mac App Store →](https://apps.apple.com/app/orpyt/id6744642680)**
+**[Download on the Mac App Store →](https://apps.apple.com/us/app/orpyt-dual-menu-bar-clock/id6765900155?mt=12)**
+
+**[Visit the Orpyt website →](https://aihtshamali.github.io/orpyt-world-time-made-simple/)**
 
 Requirements: macOS 13 Ventura or later.
 

@@ -11,6 +11,10 @@ let package = Package(
             name: "Orpyt",
             targets: ["OrpytApp"]
         ),
+        .executable(
+            name: "OrpytAgentBridge",
+            targets: ["OrpytAgentBridge"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
@@ -38,6 +42,11 @@ let package = Package(
                 .define("DIRECT_DISTRIBUTION"),
                 .define("DEBUG", .when(configuration: .debug)),
             ]
+        ),
+        .executableTarget(
+            name: "OrpytAgentBridge",
+            dependencies: ["OrpytCore"],
+            path: "Sources/AgentBridge"
         ),
         // Unit tests — can @testable import OrpytCore.
         .testTarget(

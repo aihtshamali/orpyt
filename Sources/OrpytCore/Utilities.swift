@@ -1,14 +1,16 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Combine
 import CoreLocation
 import EventKit
 import Security
-import ServiceManagement
 import SwiftUI
 import WeatherKit
 
 @MainActor
 public enum ClockFormatter {
+    #if os(macOS)
     public struct MenuBarMeetingIndicatorRender {
         public let prefix: NSAttributedString
         public let hitWidth: CGFloat
@@ -19,8 +21,24 @@ public enum ClockFormatter {
         }
     }
 
+    public struct MenuBarClockSegment {
+        public let item: MenuBarLayoutItem
+        public let slot: ClockSlot
+        public let attributedTitle: NSAttributedString
+        public let plainTitle: String
+
+        public init(item: MenuBarLayoutItem, slot: ClockSlot, attributedTitle: NSAttributedString, plainTitle: String) {
+            self.item = item
+            self.slot = slot
+            self.attributedTitle = attributedTitle
+            self.plainTitle = plainTitle
+        }
+    }
+    #endif
+
     private static var formatterCache: [String: DateFormatter] = [:]
 
+    #if os(macOS)
     public static func menuBarAttributedTitle(
         for date: Date,
         settings: ClockSettingsStore,
@@ -34,13 +52,14 @@ public enum ClockFormatter {
             .foregroundColor: titleColor,
         ]
 
-        let segments = visibleClockDescriptors(for: settings).map { descriptor in
-            (
-                label: settings.displayLabel(for: descriptor.timeZoneID, customLabel: descriptor.customLabel),
-                timeZoneID: descriptor.timeZoneID,
-                slot: descriptor.slot
-            )
-        }
+        let segments = menuBarClockSegments(
+            for: date,
+            settings: settings,
+            weatherStore: weatherStore,
+            primaryTextOverride: primaryTextOverride,
+            attributes: textAttributes,
+            font: titleFont
+        )
 
         guard !segments.isEmpty else {
             return NSAttributedString(string: "Orpyt", attributes: textAttributes)
@@ -49,44 +68,21 @@ public enum ClockFormatter {
         let result = NSMutableAttributedString()
 
         for (index, segment) in segments.enumerated() {
-            let weatherState = weatherStore.state(for: segment.slot)
-
-            if let attachment = statusAttachment(
-                for: date,
-                timeZoneID: segment.timeZoneID,
-                weatherState: weatherState,
-                settings: settings,
-                font: titleFont
-            ) {
-                result.append(attachment)
-                result.append(NSAttributedString(string: " ", attributes: textAttributes))
-            }
-
-            result.append(
-                NSAttributedString(
-                    string: index == 0 && primaryTextOverride != nil
-                        ? primaryTextOverride!
-                        : menuBarSegment(
-                            for: date,
-                            timeZoneID: segment.timeZoneID,
-                            label: segment.label,
-                            settings: settings
-                        ),
-                    attributes: textAttributes
-                )
-            )
+            result.append(segment.attributedTitle)
 
             if index < segments.count - 1 {
-                result.append(NSAttributedString(string: " | ", attributes: textAttributes))
+                result.append(menuBarSeparator(settings: settings, attributes: textAttributes))
             }
         }
 
         return result
     }
+    #endif
 
     public static func menuBarTitle(for date: Date, settings: ClockSettingsStore) -> String {
         let segments = visibleSegments(for: date, settings: settings)
-        return segments.isEmpty ? "Orpyt" : segments.joined(separator: " | ")
+        let separator = plainMenuBarSeparator(settings: settings)
+        return segments.isEmpty ? "Orpyt" : segments.joined(separator: separator)
     }
 
     public static func menuBarTooltip(for date: Date, settings: ClockSettingsStore, weatherStore: WeatherStore) -> String {
@@ -133,6 +129,7 @@ public enum ClockFormatter {
         )
     }
 
+    #if os(macOS)
     public static func meetingIndicatorRender(
         for alert: MeetingAlertSnapshot,
         style: MeetingIndicatorStyle,
@@ -151,6 +148,7 @@ public enum ClockFormatter {
             return MenuBarMeetingIndicatorRender(prefix: prefix, hitWidth: width)
         }
     }
+    #endif
 
     public static func meetingIndicatorLabel(for alert: MeetingAlertSnapshot) -> String {
         if alert.isLive {
@@ -177,15 +175,29 @@ public enum ClockFormatter {
         return "\(truncatedMeetingTitle(alert.meeting.title, maxLength: 20)) · \(meetingCountdownText(for: alert))"
     }
 
-    public static func meetingTooltipLine(for alert: MeetingAlertSnapshot, timeZoneID: String) -> String {
-        let formatter = formatter(for: timeZoneID, format: "h:mm a")
-        let startTime = formatter.string(from: alert.meeting.startDate)
+    public static func meetingTooltipLine(for alert: MeetingAlertSnapshot, settings: ClockSettingsStore) -> String {
+        let startTime = meetingTimeText(for: alert.meeting, settings: settings)
         let status = alert.isLive ? "Live now" : meetingCountdownText(for: alert)
         return "Meeting: \(alert.meeting.title) • \(startTime) • \(status)"
     }
 
+    public static func meetingTimeText(for meeting: MeetingSnapshot, settings: ClockSettingsStore) -> String {
+        let formatter = formatter(for: meetingTimeZone(for: meeting, settings: settings), format: "h:mm a")
+        return formatter.string(from: meeting.startDate)
+    }
+
     public static func timeText(for date: Date, timeZoneID: String, settings: ClockSettingsStore) -> String {
-        let format = settings.use24HourClock
+        timeText(for: date, timeZoneID: timeZoneID, settings: settings, formatOverride: .appDefault)
+    }
+
+    public static func timeText(
+        for date: Date,
+        timeZoneID: String,
+        settings: ClockSettingsStore,
+        formatOverride: MenuBarClockFormatOverride
+    ) -> String {
+        let use24HourClock = formatOverride.uses24Hour(appDefault: settings.use24HourClock)
+        let format = use24HourClock
             ? (settings.showSeconds ? "HH:mm:ss" : "HH:mm")
             : (settings.showSeconds ? "h:mm:ss a" : "h:mm a")
         let formatter = formatter(for: timeZoneID, format: format)
@@ -274,8 +286,14 @@ public enum ClockFormatter {
         }
     }
 
-    private static func menuBarSegment(for date: Date, timeZoneID: String, label: String, settings: ClockSettingsStore) -> String {
-        let time = timeText(for: date, timeZoneID: timeZoneID, settings: settings)
+    private static func menuBarSegment(
+        for date: Date,
+        timeZoneID: String,
+        label: String,
+        settings: ClockSettingsStore,
+        formatOverride: MenuBarClockFormatOverride = .appDefault
+    ) -> String {
+        let time = timeText(for: date, timeZoneID: timeZoneID, settings: settings, formatOverride: formatOverride)
         if settings.showZoneLabelInMenuBar {
             return "\(label) \(time)"
         }
@@ -326,9 +344,75 @@ public enum ClockFormatter {
                     for: descriptor.timeZoneID,
                     customLabel: descriptor.customLabel
                 ),
-                settings: settings
+                settings: settings,
+                formatOverride: settings.effectiveClockFormatOverride(for: descriptor.slot)
             )
         }
+    }
+
+    #if os(macOS)
+    public static func menuBarClockSegments(
+        for date: Date,
+        settings: ClockSettingsStore,
+        weatherStore: WeatherStore,
+        primaryTextOverride: String? = nil,
+        attributes: [NSAttributedString.Key: Any]? = nil,
+        font: NSFont? = nil
+    ) -> [MenuBarClockSegment] {
+        let titleFont = font ?? NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        let textAttributes = attributes ?? [
+            .font: titleFont,
+            .foregroundColor: NSColor.labelColor,
+        ]
+
+        return visibleClockDescriptors(for: settings).compactMap { descriptor in
+            guard let item = MenuBarLayoutItem(slot: descriptor.slot) else { return nil }
+            let label = settings.displayLabel(for: descriptor.timeZoneID, customLabel: descriptor.customLabel)
+            let formatOverride = settings.effectiveClockFormatOverride(for: descriptor.slot)
+            let plainTitle = descriptor.slot == .primary && primaryTextOverride != nil
+                ? primaryTextOverride!
+                : menuBarSegment(
+                    for: date,
+                    timeZoneID: descriptor.timeZoneID,
+                    label: label,
+                    settings: settings,
+                    formatOverride: formatOverride
+                )
+            let attributedTitle = NSMutableAttributedString()
+            let weatherState = weatherStore.state(for: descriptor.slot)
+
+            if let attachment = statusAttachment(
+                for: date,
+                timeZoneID: descriptor.timeZoneID,
+                weatherState: weatherState,
+                settings: settings,
+                font: titleFont
+            ) {
+                attributedTitle.append(attachment)
+                attributedTitle.append(NSAttributedString(string: " ", attributes: textAttributes))
+            }
+
+            attributedTitle.append(NSAttributedString(string: plainTitle, attributes: textAttributes))
+            return MenuBarClockSegment(
+                item: item,
+                slot: descriptor.slot,
+                attributedTitle: attributedTitle,
+                plainTitle: plainTitle
+            )
+        }
+    }
+
+    public static func menuBarSeparator(
+        settings: ClockSettingsStore,
+        attributes: [NSAttributedString.Key: Any]
+    ) -> NSAttributedString {
+        NSAttributedString(string: plainMenuBarSeparator(settings: settings), attributes: attributes)
+    }
+    #endif
+
+    private static func plainMenuBarSeparator(settings: ClockSettingsStore) -> String {
+        let padding = settings.effectiveMenuBarSpacing.separatorPadding
+        return "\(padding)\(settings.effectiveMenuBarSeparatorStyle.symbol)\(padding)"
     }
 
     private static func visibleDetailLines(for date: Date, settings: ClockSettingsStore, weatherStore: WeatherStore) -> [String] {
@@ -350,23 +434,20 @@ public enum ClockFormatter {
     private static func visibleClockDescriptors(
         for settings: ClockSettingsStore
     ) -> [(slot: ClockSlot, timeZoneID: String, customLabel: String)] {
-        var descriptors: [(slot: ClockSlot, timeZoneID: String, customLabel: String)] = []
+        var descriptorsByItem: [MenuBarLayoutItem: (slot: ClockSlot, timeZoneID: String, customLabel: String)] = [:]
 
         if settings.showPrimaryClock {
-            descriptors.append(
-                (slot: .primary, timeZoneID: settings.primaryTimeZoneID, customLabel: settings.primaryCustomLabel)
-            )
+            descriptorsByItem[.primaryClock] = (slot: .primary, timeZoneID: settings.primaryTimeZoneID, customLabel: settings.primaryCustomLabel)
         }
 
         if settings.showSecondaryClock {
-            descriptors.append(
-                (slot: .secondary, timeZoneID: settings.secondaryTimeZoneID, customLabel: settings.secondaryCustomLabel)
-            )
+            descriptorsByItem[.secondaryClock] = (slot: .secondary, timeZoneID: settings.secondaryTimeZoneID, customLabel: settings.secondaryCustomLabel)
         }
 
-        return descriptors
+        return settings.effectiveMenuBarLayoutItems.compactMap { descriptorsByItem[$0] }
     }
 
+    #if os(macOS)
     private static func statusAttachment(
         for date: Date,
         timeZoneID: String,
@@ -403,6 +484,7 @@ public enum ClockFormatter {
         attachment.bounds = NSRect(x: 0, y: -2, width: font.pointSize, height: font.pointSize)
         return NSAttributedString(attachment: attachment)
     }
+    #endif
 
     private static func ambientIconName(for date: Date, timeZoneID: String) -> String {
         guard let timeZone = TimeZone(identifier: timeZoneID) else {
@@ -424,6 +506,11 @@ public enum ClockFormatter {
     }
 
     private static func formatter(for timeZoneID: String, format: String) -> DateFormatter {
+        formatter(for: TimeZone(identifier: timeZoneID) ?? .autoupdatingCurrent, format: format)
+    }
+
+    private static func formatter(for timeZone: TimeZone, format: String) -> DateFormatter {
+        let timeZoneID = timeZone.identifier
         let cacheKey = "\(timeZoneID)|\(format)"
         if let formatter = formatterCache[cacheKey] {
             return formatter
@@ -431,10 +518,23 @@ public enum ClockFormatter {
 
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
-        formatter.timeZone = TimeZone(identifier: timeZoneID)
+        formatter.timeZone = timeZone
         formatter.dateFormat = format
         formatterCache[cacheKey] = formatter
         return formatter
+    }
+
+    private static func meetingTimeZone(for meeting: MeetingSnapshot, settings: ClockSettingsStore) -> TimeZone {
+        switch settings.meetingTimeZonePreference {
+        case .system:
+            return .autoupdatingCurrent
+        case .event:
+            return meeting.timeZoneID.flatMap(TimeZone.init(identifier:)) ?? .autoupdatingCurrent
+        case .primary:
+            return TimeZone(identifier: settings.primaryTimeZoneID) ?? .autoupdatingCurrent
+        case .secondary:
+            return TimeZone(identifier: settings.secondaryTimeZoneID) ?? .autoupdatingCurrent
+        }
     }
 
     private static func truncatedMeetingTitle(_ title: String, maxLength: Int) -> String {
@@ -444,6 +544,7 @@ public enum ClockFormatter {
         return String(trimmed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
+    #if os(macOS)
     private static func tinyBadgeAttachment(for alert: MeetingAlertSnapshot, font: NSFont) -> NSAttributedString? {
         let size = NSSize(width: font.pointSize - 1, height: font.pointSize - 1)
         let image = NSImage(size: size)
@@ -500,6 +601,18 @@ public enum ClockFormatter {
             return NSColor(calibratedRed: 0.90, green: 0.56, blue: 0.16, alpha: 1)
         case .critical:
             return NSColor(calibratedRed: 0.85, green: 0.21, blue: 0.24, alpha: 1)
+        }
+    }
+    #endif
+}
+
+extension MenuBarLayoutItem {
+    public init?(slot: ClockSlot) {
+        switch slot {
+        case .primary:
+            self = .primaryClock
+        case .secondary:
+            self = .secondaryClock
         }
     }
 }

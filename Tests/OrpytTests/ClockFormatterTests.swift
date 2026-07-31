@@ -157,6 +157,39 @@ struct ClockFormatterTests {
         #expect(!result.contains("UNIQUELABEL"))
     }
 
+    @Test("menuBarTitle follows custom clock order")
+    func menuBarTitleCustomOrder() {
+        let s = makeSettings(use24Hour: true, showPrimary: true, showSecondary: true)
+        s.primaryCustomLabel = "GMT"
+        s.secondaryCustomLabel = "NYC"
+        s.setMenuBarLayoutItems([.secondaryClock, .primaryClock, .meetingIndicator])
+        let result = ClockFormatter.menuBarTitle(for: date, settings: s)
+        #expect(result.hasPrefix("NYC 10:30"))
+        #expect(result.contains("|  GMT 14:30"))
+    }
+
+    @Test("menuBarTitle respects separator and spacing")
+    func menuBarTitleSeparatorAndSpacing() {
+        let s = makeSettings(use24Hour: true, showPrimary: true, showSecondary: true)
+        s.primaryCustomLabel = "GMT"
+        s.secondaryCustomLabel = "NYC"
+        s.menuBarSeparatorStyle = .dot
+        s.menuBarSpacing = .compact
+        let result = ClockFormatter.menuBarTitle(for: date, settings: s)
+        #expect(result.contains("GMT 14:30 • NYC 10:30"))
+    }
+
+    @Test("menuBarTitle supports per-clock format override")
+    func menuBarTitleClockFormatOverride() {
+        let s = makeSettings(use24Hour: true, showPrimary: true, showSecondary: true)
+        s.primaryCustomLabel = "GMT"
+        s.secondaryCustomLabel = "NYC"
+        s.secondaryClockFormatOverride = .twelveHour
+        let result = ClockFormatter.menuBarTitle(for: date, settings: s).lowercased()
+        #expect(result.contains("gmt 14:30"))
+        #expect(result.contains("nyc 10:30 am"))
+    }
+
     // MARK: detailLine
 
     @Test("detailLine contains label and time")
@@ -311,6 +344,50 @@ struct ClockFormatterTests {
         #expect(alert?.isLive == true)
     }
 
+    @Test("meeting time text can use calendar event timezone independent of primary clock")
+    func meetingTimeTextUsesEventTimeZoneWhenSelected() {
+        let settings = makeSettings(use24Hour: false)
+        settings.primaryTimeZoneID = "America/Chicago"
+        settings.meetingTimeZonePreference = .event
+
+        let meeting = MeetingSnapshot(
+            id: "meeting-event-zone",
+            title: "Standup",
+            startDate: date,
+            endDate: date.addingTimeInterval(30 * 60),
+            calendarName: "Work",
+            timeZoneID: "Europe/London",
+            joinURL: nil
+        )
+
+        let result = ClockFormatter.meetingTimeText(for: meeting, settings: settings).lowercased()
+
+        #expect(result.contains("3:30"))
+        #expect(result.contains("pm"))
+    }
+
+    @Test("meeting time text only uses primary clock when explicitly selected")
+    func meetingTimeTextUsesPrimaryOnlyWhenSelected() {
+        let settings = makeSettings(use24Hour: false)
+        settings.primaryTimeZoneID = "America/Chicago"
+        settings.meetingTimeZonePreference = .primary
+
+        let meeting = MeetingSnapshot(
+            id: "meeting-primary-zone",
+            title: "Standup",
+            startDate: date,
+            endDate: date.addingTimeInterval(30 * 60),
+            calendarName: "Work",
+            timeZoneID: "Europe/London",
+            joinURL: nil
+        )
+
+        let result = ClockFormatter.meetingTimeText(for: meeting, settings: settings).lowercased()
+
+        #expect(result.contains("9:30"))
+        #expect(result.contains("am"))
+    }
+
     // MARK: Helpers
 
     private func makeSettings(
@@ -324,6 +401,8 @@ struct ClockFormatterTests {
         showSecondary: Bool = false,
         showZoneLabel: Bool = true
     ) -> ClockSettingsStore {
+        SubscriptionStore.shared.applyTestingEntitlementState(.active)
+
         let s = ClockSettingsStore.shared
         s.use24HourClock = use24Hour
         s.showSeconds = showSeconds
@@ -338,6 +417,13 @@ struct ClockFormatterTests {
         s.primaryCustomLabel = ""
         s.secondaryCustomLabel = ""
         s.showZoneLabelInMenuBar = showZoneLabel
+        s.setMenuBarLayoutItems(MenuBarLayoutItem.defaultOrder)
+        s.primaryClockFormatOverride = .appDefault
+        s.secondaryClockFormatOverride = .appDefault
+        s.menuBarSeparatorStyle = .pipe
+        s.menuBarSpacing = .comfortable
+        s.refreshIntervalPreference = .automatic
+        s.meetingTimeZonePreference = .system
         s.enableWeather = false
         return s
     }

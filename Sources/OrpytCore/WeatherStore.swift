@@ -1,9 +1,7 @@
-import AppKit
 import Combine
 import CoreLocation
 import EventKit
 import Security
-import ServiceManagement
 import SwiftUI
 import WeatherKit
 
@@ -282,6 +280,7 @@ public final class WeatherStore: ObservableObject {
 
 public enum WeatherKitAvailability {
     public static let isEnabledForCurrentProcess: Bool = {
+        #if os(macOS)
         guard let task = SecTaskCreateFromSelf(nil) else {
             return false
         }
@@ -296,6 +295,9 @@ public enum WeatherKitAvailability {
         }
 
         return false
+        #else
+        return true
+        #endif
     }()
 }
 

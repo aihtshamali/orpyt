@@ -36,7 +36,7 @@
 ## Upgrade Notes
 
 - Existing users can install over the current version.
-- This build is version `1.2` / build `17` for App Store submission.
+- This build is version `1.2.2` / build `24` for App Store submission.
 - Calendar access does not need to be re-granted if it is already enabled in macOS Settings.
 - The new review prompt waits for calm value moments and never appears during permission, subscription, or active meeting friction.
 - Feature suggestions now open GitHub Discussions at `https://github.com/aihtshamali/orpyt/discussions`.

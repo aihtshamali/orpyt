@@ -3,7 +3,6 @@ import Combine
 import CoreLocation
 import EventKit
 import Security
-import ServiceManagement
 import SwiftUI
 import WeatherKit
 
@@ -12,10 +11,12 @@ public struct StatusPopoverView: View {
     @ObservedObject public var weatherStore: WeatherStore
     @ObservedObject public var calendarStore: CalendarStore
     @ObservedObject public var subscriptionStore: SubscriptionStore
+    @ObservedObject public var agentStore: AgentActivityStore
     public let appearanceMode: AppearanceMode
     public let onOpenSettings: (SettingsPane?) -> Void
     public let onSwapTimeZones: () -> Void
     public let onCreateMeeting: () -> Void
+    public let onOpenAgentActivity: (AgentActivity) -> Void
     public let onQuit: () -> Void
     public let onReviewValueMoment: (ReviewValueMoment) -> Void
     public let onContentHeightChange: (CGFloat) -> Void
@@ -40,10 +41,12 @@ public struct StatusPopoverView: View {
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
+        agentStore: AgentActivityStore,
         appearanceMode: AppearanceMode,
         onOpenSettings: @escaping (SettingsPane?) -> Void,
         onSwapTimeZones: @escaping () -> Void,
         onCreateMeeting: @escaping () -> Void,
+        onOpenAgentActivity: @escaping (AgentActivity) -> Void,
         onQuit: @escaping () -> Void,
         onReviewValueMoment: @escaping (ReviewValueMoment) -> Void,
         onContentHeightChange: @escaping (CGFloat) -> Void
@@ -52,10 +55,12 @@ public struct StatusPopoverView: View {
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
+        self.agentStore = agentStore
         self.appearanceMode = appearanceMode
         self.onOpenSettings = onOpenSettings
         self.onSwapTimeZones = onSwapTimeZones
         self.onCreateMeeting = onCreateMeeting
+        self.onOpenAgentActivity = onOpenAgentActivity
         self.onQuit = onQuit
         self.onReviewValueMoment = onReviewValueMoment
         self.onContentHeightChange = onContentHeightChange
@@ -88,8 +93,14 @@ public struct StatusPopoverView: View {
             height += 82
         }
 
-        if WelcomePeriodStore.shared.shouldShowPopoverReminder {
+        if subscriptionStore.shouldShowUpgradeActions,
+           !subscriptionStore.entitlementState.hasProAccess,
+           WelcomePeriodStore.shared.shouldShowPopoverReminder {
             height += 36
+        }
+
+        if agentStore.showTaskDetailsInPopover && !agentStore.visibleActivities.isEmpty {
+            height += CGFloat(min(agentStore.visibleActivities.count, 3) * 46) + 56
         }
 
         height += 86
@@ -221,22 +232,22 @@ public struct StatusPopoverView: View {
                                 }
                             }
 
+                            if agentStore.showTaskDetailsInPopover && !agentStore.visibleActivities.isEmpty {
+                                agentTasksSection
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
                             if settings.effectiveCalendarEnabled {
                                 NextMeetingSnippetView(
                                     state: calendarStore.state,
                                     now: context.date,
-                                    primaryTimeZoneID: settings.primaryTimeZoneID,
+                                    settings: settings,
                                     onOpenMeeting: openMeeting,
                                     onCreateMeeting: onCreateMeeting,
                                     onOpenCalendar: openCalendarDay,
                                     onRequestAccess: {
                                         let status = EKEventStore.authorizationStatus(for: .event)
-                                        let isDenied: Bool
-                                        if #available(macOS 14.0, *) {
-                                            isDenied = status == .denied || status == .restricted
-                                        } else {
-                                            isDenied = status == .denied || status == .restricted
-                                        }
+                                        let isDenied = status == .denied || status == .restricted
                                         if isDenied {
                                             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
                                         } else {
@@ -412,6 +423,66 @@ public struct StatusPopoverView: View {
         .zIndex(1)
     }
 
+    private var agentTasksSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Agent activity", systemImage: "sparkles.rectangle.stack")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button("Manage") { onOpenSettings(.agents) }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Clear finished") { agentStore.clearFinished() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(agentStore.visibleActivities.prefix(3)) { activity in
+                    Button { onOpenAgentActivity(activity) } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: activity.state.systemImage)
+                                .foregroundStyle(agentColor(activity.state))
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(activity.projectName)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .lineLimit(1)
+                                Text("\(activity.sourceTitle) · \(activity.state.title)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(activity.updatedAt, style: .relative)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    if activity.id != agentStore.visibleActivities.prefix(3).last?.id {
+                        Divider().padding(.leading, 37)
+                    }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 12).fill(palette.chromeFill))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.chromeStroke, lineWidth: 0.8))
+        }
+    }
+
+    private func agentColor(_ state: AgentActivityState) -> Color {
+        switch state {
+        case .running: return .purple
+        case .needsAttention: return .orange
+        case .completed: return .green
+        case .failed: return .red
+        case .stale: return .secondary
+        }
+    }
+
 
     private var visibleSlots: [ClockSlot] {
         var slots: [ClockSlot] = []
@@ -491,7 +562,6 @@ public struct StatusPopoverView: View {
         }
 
         quickSearchText = ""
-        isQuickSearchPresented = false
     }
 
     private func openMeeting(_ snapshot: MeetingSnapshot) {
@@ -521,6 +591,8 @@ public struct PopoverQuickSearchView: View {
     public let results: [TimeZoneOption]
     public let onSelect: (TimeZoneOption) -> Void
     public let onUseCurrentTimeZone: () -> Void
+    @State private var currentTimeZoneFeedback: String?
+    @State private var highlightedOptionID: String?
 
     private var customLabelBinding: Binding<String> {
         targetSlot == .primary ? $primaryCustomLabel : $secondaryCustomLabel
@@ -534,12 +606,27 @@ public struct PopoverQuickSearchView: View {
 
                 Spacer()
 
-                Button(action: onUseCurrentTimeZone) {
+                Button {
+                    let currentID = TimeZone.current.identifier
+                    let option = TimeZoneCatalog.option(for: currentID)
+                    let displayName = option?.displayName ?? currentID
+                    currentTimeZoneFeedback = "Using this Mac's time zone: \(displayName)"
+                    highlightedOptionID = currentID
+                    searchText = option?.cityName ?? currentID
+                    onUseCurrentTimeZone()
+                } label: {
                     Label("Current", systemImage: "location.fill")
                 }
                 .buttonStyle(.borderless)
                 .orpytClickableHover(scale: 1.02, brightness: 0.012)
                 .font(.system(size: 11, weight: .medium))
+            }
+
+            if let currentTimeZoneFeedback {
+                Label(currentTimeZoneFeedback, systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             if availableSlots.count > 1 {
@@ -591,6 +678,14 @@ public struct PopoverQuickSearchView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 9)
                         .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(option.id == highlightedOptionID ? Color.accentColor.opacity(0.18) : .clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(option.id == highlightedOptionID ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.2)
+                        )
                     }
                     .buttonStyle(.plain)
                     .orpytClickableHover(scale: 1.01, brightness: 0.015)
@@ -609,6 +704,12 @@ public struct PopoverQuickSearchView: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
             )
+        }
+        .onChange(of: searchText) { newValue in
+            if let option = TimeZoneCatalog.option(for: highlightedOptionID ?? ""), newValue != option.cityName {
+                highlightedOptionID = nil
+                currentTimeZoneFeedback = nil
+            }
         }
     }
 
@@ -687,6 +788,7 @@ public struct PopoverProLockedCard: View {
     }
 }
 
+#if os(macOS)
 private struct PopoverScrollViewConfigurator: NSViewRepresentable {
     let isScrollEnabled: Bool
 
@@ -726,6 +828,15 @@ private extension NSView {
         return nil
     }
 }
+#else
+private struct PopoverScrollViewConfigurator: View {
+    let isScrollEnabled: Bool
+
+    var body: some View {
+        Color.clear
+    }
+}
+#endif
 
 public struct PopoverProReminderFooter: View {
     @ObservedObject public var welcomeStore: WelcomePeriodStore
@@ -742,7 +853,9 @@ public struct PopoverProReminderFooter: View {
     }
 
     public var body: some View {
-        if welcomeStore.shouldShowPopoverReminder {
+        if subscriptionStore.shouldShowUpgradeActions,
+           !subscriptionStore.entitlementState.hasProAccess,
+           welcomeStore.shouldShowPopoverReminder {
             Button(action: {
                 subscriptionStore.showProSheet = true
                 onOpenSettings()
@@ -929,6 +1042,7 @@ public struct QuickSettingChip: View {
 /// Shared reference that lets TimeScrollerWheelCapture focus the slider directly.
 @MainActor
 public final class SliderFocusProxy: ObservableObject {
+    #if os(macOS)
     weak var slider: NSSlider?
     func focus() {
         guard let slider, let window = slider.window else { return }
@@ -938,6 +1052,10 @@ public final class SliderFocusProxy: ObservableObject {
         guard let slider, let window = slider.window else { return }
         if window.firstResponder === slider { window.makeFirstResponder(nil) }
     }
+    #else
+    func focus() {}
+    func blur() {}
+    #endif
 }
 
 public struct TimeScrollerStrip: View {
@@ -976,15 +1094,15 @@ public struct TimeScrollerStrip: View {
 
                 Spacer()
 
-                Button {
-                    isMuted.toggle()
-                } label: {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            Button {
+                isMuted.toggle()
+            } label: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(isMuted ? .secondary : .primary)
-                }
-                .buttonStyle(.borderless)
-                .help(isMuted ? "Turn on scroll sound" : "Mute scroll sound")
+            }
+            .buttonStyle(.borderless)
+            .help(isMuted ? "Turn on scroll sound" : "Mute scroll sound")
 
                 Button(timeShiftMinutes == 0 ? "Now" : "Reset") {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
@@ -1027,21 +1145,14 @@ public struct TimeScrollerStrip: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .cursor(.pointingHand)
+                    .orpytPointerCursor()
                 }
             }
             .frame(height: 24)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(
-            // Wheel capture behind all content so clicks pass through to buttons/labels
-            TimeScrollerWheelCapture(isMuted: isMuted, focusProxy: focusProxy) { step in
-                let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
-                let snapped = (newValue * 4).rounded() / 4
-                timeShiftMinutes = Int(snapped * 60)
-            }
-        )
+        .background(wheelCaptureBackground)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(palette.cardFill)
@@ -1077,9 +1188,24 @@ public struct TimeScrollerStrip: View {
         }
         return "Previewing \(prefix)\(hours)h \(minutes)m across your clocks."
     }
+
+    @ViewBuilder
+    private var wheelCaptureBackground: some View {
+        #if os(macOS)
+        // Wheel capture behind all content so clicks pass through to buttons/labels.
+        TimeScrollerWheelCapture(isMuted: isMuted, focusProxy: focusProxy) { step in
+            let newValue = max(-12.0, min(12.0, Double(timeShiftMinutes) / 60.0 + Double(step) * 0.25))
+            let snapped = (newValue * 4).rounded() / 4
+            timeShiftMinutes = Int(snapped * 60)
+        }
+        #else
+        Color.clear
+        #endif
+    }
 }
 
 
+#if os(macOS)
 /// Transparent NSView overlay that captures horizontal scrubbing while allowing
 /// normal vertical scrolling to continue through the popover content.
 public struct TimeScrollerWheelCapture: NSViewRepresentable {
@@ -1216,11 +1342,36 @@ public final class WheelScrubbingNSSlider: NSSlider {
         }
     }
 }
+#else
+public struct WheelScrubbingSlider: View {
+    @Binding public var value: Double
+    public let range: ClosedRange<Double>
+    public let step: Double
+    public var isMuted: Bool
+    public var focusProxy: SliderFocusProxy? = nil
+
+    public var body: some View {
+        Slider(value: steppedValue, in: range, step: step)
+    }
+
+    private var steppedValue: Binding<Double> {
+        Binding(
+            get: { value },
+            set: { newValue in
+                let snapped = (newValue / step).rounded() * step
+                value = min(range.upperBound, max(range.lowerBound, snapped))
+                TickFeedbackPlayer.shared.play(isMuted: isMuted)
+            }
+        )
+    }
+}
+#endif
 
 @MainActor
 public final class TickFeedbackPlayer {
     public static let shared = TickFeedbackPlayer()
 
+    #if os(macOS)
     // Template sound — never played directly; cloned for each tick so there's
     // no stop/play contention and playback starts with zero latency.
     private let template: NSSound?
@@ -1238,8 +1389,16 @@ public final class TickFeedbackPlayer {
         guard !isMuted, let copy = template?.copy() as? NSSound else { return }
         copy.play()
     }
+    #else
+    private init() {}
+
+    public func play(isMuted: Bool = false) {
+        _ = isMuted
+    }
+    #endif
 }
 
+#if os(macOS)
 private struct CursorModifier: ViewModifier {
     let cursor: NSCursor
     func body(content: Content) -> some View {
@@ -1253,4 +1412,15 @@ private extension View {
     func cursor(_ cursor: NSCursor) -> some View {
         modifier(CursorModifier(cursor: cursor))
     }
+
+    func orpytPointerCursor() -> some View {
+        cursor(.pointingHand)
+    }
 }
+#else
+private extension View {
+    func orpytPointerCursor() -> some View {
+        self
+    }
+}
+#endif

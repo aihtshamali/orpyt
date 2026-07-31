@@ -354,7 +354,7 @@ public final class SubscriptionStore: ObservableObject {
 
     public func redeemOfferCode() {
         guard commerceMode.supportsAppStoreCommerce,
-              let url = URL(string: "https://apps.apple.com/redeem?ctx=offercodes") else {
+              let url = URL(string: "https://apps.apple.com/redeem") else {
             return
         }
         NSWorkspace.shared.open(url)
@@ -366,6 +366,18 @@ public final class SubscriptionStore: ObservableObject {
         }
         NSWorkspace.shared.open(url)
     }
+
+    #if DEBUG
+    public func applyTestingEntitlementState(_ state: SubscriptionEntitlementState) {
+        entitlementState = state
+        activePlanID = state.hasProAccess ? .yearly : nil
+        renewalDate = nil
+        expirationDate = nil
+        willAutoRenew = state.hasProAccess
+        lastErrorMessage = nil
+        updateStatusMessage()
+    }
+    #endif
 
     public func refreshEntitlements() async {
         guard commerceMode.supportsAppStoreCommerce else {

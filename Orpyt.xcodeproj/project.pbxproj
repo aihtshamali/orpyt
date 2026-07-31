@@ -26,6 +26,8 @@
 		A0U000000000000000000001 /* SubscriptionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0U000000000000000000011 /* SubscriptionStore.swift */; };
 		A0U000000000000000000002 /* SubscriptionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0U000000000000000000012 /* SubscriptionStoreTests.swift */; };
 		A0W000000000000000000001 /* WelcomePeriodStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0W000000000000000000011 /* WelcomePeriodStore.swift */; };
+		A0P000000000000000000001 /* AgentPulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0P000000000000000000011 /* AgentPulse.swift */; };
+		A0P000000000000000000002 /* AgentPulseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0P000000000000000000012 /* AgentPulseTests.swift */; };
 		A0X000000000000000000001 /* Assets/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0X000000000000000000011 /* Assets/Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -65,6 +67,8 @@
 		A0U000000000000000000011 /* SubscriptionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStore.swift; sourceTree = "<group>"; };
 		A0U000000000000000000012 /* SubscriptionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreTests.swift; sourceTree = "<group>"; };
 		A0W000000000000000000011 /* WelcomePeriodStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomePeriodStore.swift; sourceTree = "<group>"; };
+		A0P000000000000000000011 /* AgentPulse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPulse.swift; sourceTree = "<group>"; };
+		A0P000000000000000000012 /* AgentPulseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPulseTests.swift; sourceTree = "<group>"; };
 		A0X000000000000000000011 /* Assets/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets/Assets.xcassets; sourceTree = "<group>"; };
 		A0Y000000000000000000011 /* Orpyt.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Orpyt.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -146,6 +150,7 @@
 		A00000000000000000000037 /* OrpytCore */ = {
 			isa = PBXGroup;
 			children = (
+				A0P000000000000000000011 /* AgentPulse.swift */,
 				A00000000000000000000007 /* ClockCardViews.swift */,
 				A00000000000000000000008 /* Models.swift */,
 				A00000000000000000000009 /* PopoverViews.swift */,
@@ -163,6 +168,7 @@
 		A0T000000000000000000080 /* Tests/OrpytTests */ = {
 			isa = PBXGroup;
 			children = (
+				A0P000000000000000000012 /* AgentPulseTests.swift */,
 				A0T000000000000000000011 /* ClockFormatterTests.swift */,
 				A0T000000000000000000012 /* ClockSettingsStoreTests.swift */,
 				A0T000000000000000000013 /* TimeZoneCatalogTests.swift */,
@@ -192,6 +198,7 @@
 				A00000000000000000000022 /* Sources */,
 				A00000000000000000000021 /* Frameworks */,
 				A00000000000000000000023 /* Resources */,
+				A0P000000000000000000030 /* Embed Agent Pulse Bridge */,
 			);
 			buildRules = (
 			);
@@ -274,11 +281,34 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A0P000000000000000000030 /* Embed Agent Pulse Bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Sources/AgentBridge/main.swift",
+				"$(SRCROOT)/Sources/OrpytCore/AgentPulse.swift",
+				"$(SRCROOT)/OrpytAgentBridge.entitlements",
+			);
+			name = "Embed Agent Pulse Bridge";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/OrpytAgentBridge",
+				"$(DWARF_DSYM_FOLDER_PATH)/OrpytAgentBridge.dSYM",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -euo pipefail\ncd \"$SRCROOT\"\nconfig=$(echo \"$CONFIGURATION\" | tr '[:upper:]' '[:lower:]')\nhelper=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/OrpytAgentBridge\"\nmkdir -p \"$(dirname \"$helper\")\"\nbinaries=()\nfor arch in ${=ARCHS}; do\n  scratch=\"$TARGET_TEMP_DIR/AgentBridge-$arch\"\n  swift build -c \"$config\" --product OrpytAgentBridge --triple \"$arch-apple-macosx$MACOSX_DEPLOYMENT_TARGET\" --scratch-path \"$scratch\"\n  binaries+=(\"$scratch/$arch-apple-macosx/$config/OrpytAgentBridge\")\ndone\nif (( ${#binaries[@]} > 1 )); then\n  /usr/bin/lipo -create \"${binaries[@]}\" -output \"$helper\"\nelse\n  cp \"${binaries[1]}\" \"$helper\"\nfi\nchmod +x \"$helper\"\nif [[ \"${DEBUG_INFORMATION_FORMAT:-}\" == \"dwarf-with-dsym\" && -n \"${DWARF_DSYM_FOLDER_PATH:-}\" ]]; then\n  helper_dsym=\"$DWARF_DSYM_FOLDER_PATH/OrpytAgentBridge.dSYM\"\n  rm -rf \"$helper_dsym\"\n  mkdir -p \"$DWARF_DSYM_FOLDER_PATH\"\n  xcrun dsymutil \"$helper\" -o \"$helper_dsym\"\nfi\nif [[ \"${CODE_SIGNING_ALLOWED:-NO}\" != \"NO\" && -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]]; then\n  /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --entitlements \"$SRCROOT/OrpytAgentBridge.entitlements\" \"$helper\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000022 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0P000000000000000000001 /* AgentPulse.swift in Sources */,
 				A00000000000000000000011 /* OrpytApp.swift in Sources */,
 				A00000000000000000000015 /* ClockCardViews.swift in Sources */,
 				A00000000000000000000016 /* Models.swift in Sources */,
@@ -297,6 +327,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0P000000000000000000002 /* AgentPulseTests.swift in Sources */,
 				A0T000000000000000000001 /* ClockFormatterTests.swift in Sources */,
 				A0T000000000000000000002 /* ClockSettingsStoreTests.swift in Sources */,
 				A0T000000000000000000003 /* TimeZoneCatalogTests.swift in Sources */,
@@ -329,7 +360,7 @@
 				CODE_SIGN_ENTITLEMENTS = Orpyt.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = 6Y48ZAP972;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -353,7 +384,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app;
 				PRODUCT_MODULE_NAME = OrpytCore;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -383,7 +414,7 @@
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "3rd Party Mac Developer Application";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = 6Y48ZAP972;
@@ -408,7 +439,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.orpyt.app;
 				PRODUCT_MODULE_NAME = OrpytCore;
 				PRODUCT_NAME = "$(TARGET_NAME)";

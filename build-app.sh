@@ -11,6 +11,7 @@ DIST_APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+HELPERS_DIR="$CONTENTS_DIR/Helpers"
 CONFIGURATION="${ORPYT_BUILD_CONFIGURATION:-debug}"
 
 swift build -c "$CONFIGURATION"
@@ -20,9 +21,11 @@ if [[ -d "$APP_DIR" ]]; then
   chmod -R u+w "$APP_DIR" 2>/dev/null || true
   rm -rf "$APP_DIR" 2>/dev/null || true
 fi
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR"
 
 cp "$BUILD_DIR/$CONFIGURATION/$APP_NAME" "$MACOS_DIR/$APP_NAME"
+cp "$BUILD_DIR/$CONFIGURATION/OrpytAgentBridge" "$HELPERS_DIR/OrpytAgentBridge"
+chmod +x "$HELPERS_DIR/OrpytAgentBridge"
 cp "$ROOT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
 
 /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$CONTENTS_DIR/Info.plist" 2>/dev/null || true

@@ -12,6 +12,7 @@ public enum ReviewValueMoment: String, CaseIterable {
 public final class ReviewPromptStore: ObservableObject {
     public static let shared = ReviewPromptStore()
     public static let suggestionsURL = URL(string: "https://github.com/aihtshamali/orpyt/discussions")!
+    public static let appStoreReviewURL = URL(string: "https://apps.apple.com/app/id6765900155?action=write-review")!
 
     private enum Keys {
         static let firstSeenDate = "reviewPrompt.firstSeenDate"

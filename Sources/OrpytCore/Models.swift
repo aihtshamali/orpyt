@@ -1,9 +1,7 @@
-import AppKit
 import Combine
 import CoreLocation
 import EventKit
 import Security
-import ServiceManagement
 import SwiftUI
 import WeatherKit
 
@@ -27,7 +25,26 @@ public struct MeetingSnapshot: Identifiable, Equatable {
     public let startDate: Date
     public let endDate: Date
     public let calendarName: String
+    public let timeZoneID: String?
     public let joinURL: URL?
+
+    public init(
+        id: String,
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        calendarName: String,
+        timeZoneID: String? = nil,
+        joinURL: URL?
+    ) {
+        self.id = id
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.calendarName = calendarName
+        self.timeZoneID = timeZoneID
+        self.joinURL = joinURL
+    }
 
     public var hasJoinURL: Bool {
         joinURL != nil
@@ -148,6 +165,24 @@ public enum MeetingIndicatorClickAction: String, Codable, CaseIterable, Identifi
         case .openMeeting: return "Join or Open Meeting"
         case .openCalendar: return "Open Calendar"
         case .revealTitle: return "Reveal Title"
+        }
+    }
+}
+
+public enum MeetingTimeZonePreference: String, Codable, CaseIterable, Identifiable {
+    case system
+    case event
+    case primary
+    case secondary
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .system: return "Mac Time Zone"
+        case .event: return "Calendar Event"
+        case .primary: return "Primary Clock"
+        case .secondary: return "Secondary Clock"
         }
     }
 }

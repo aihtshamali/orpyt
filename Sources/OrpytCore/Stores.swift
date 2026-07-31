@@ -1,9 +1,10 @@
-import AppKit
 import Combine
 import CoreLocation
 import EventKit
 import Security
+#if os(macOS)
 import ServiceManagement
+#endif
 import SwiftUI
 import WeatherKit
 
@@ -107,6 +108,13 @@ public final class ClockSettingsStore: ObservableObject {
     }
     @Published public var meetingIndicatorHoverBehavior: MeetingIndicatorHoverBehavior { didSet { scheduleSave() } }
     @Published public var meetingIndicatorClickAction: MeetingIndicatorClickAction { didSet { scheduleSave() } }
+    @Published public var meetingTimeZonePreference: MeetingTimeZonePreference { didSet { scheduleSave() } }
+    @Published public private(set) var menuBarLayoutItems: [MenuBarLayoutItem] { didSet { scheduleSave() } }
+    @Published public var primaryClockFormatOverride: MenuBarClockFormatOverride { didSet { scheduleSave() } }
+    @Published public var secondaryClockFormatOverride: MenuBarClockFormatOverride { didSet { scheduleSave() } }
+    @Published public var menuBarSeparatorStyle: MenuBarSeparatorStyle { didSet { scheduleSave() } }
+    @Published public var menuBarSpacing: MenuBarSpacing { didSet { scheduleSave() } }
+    @Published public var refreshIntervalPreference: RefreshIntervalPreference { didSet { scheduleSave() } }
     @Published public var muteScrollerSound: Bool { didSet { scheduleSave() } }
     // Stored as the enum directly — avoids silent rawValue mismatch fallback to .system
     @Published public var appearanceMode: AppearanceMode { didSet { scheduleSave() } }
@@ -152,6 +160,16 @@ public final class ClockSettingsStore: ObservableObject {
         meetingCriticalWarningMinutes = defaults.object(forKey: SettingsKeys.meetingCriticalWarningMinutes) as? Int ?? 5
         meetingIndicatorHoverBehavior = MeetingIndicatorHoverBehavior(rawValue: defaults.string(forKey: SettingsKeys.meetingIndicatorHoverBehavior) ?? "") ?? .tooltipOnly
         meetingIndicatorClickAction = MeetingIndicatorClickAction(rawValue: defaults.string(forKey: SettingsKeys.meetingIndicatorClickAction) ?? "") ?? .openMeeting
+        meetingTimeZonePreference = MeetingTimeZonePreference(rawValue: defaults.string(forKey: SettingsKeys.meetingTimeZonePreference) ?? "") ?? .system
+        menuBarLayoutItems = Self.sanitizedMenuBarLayoutItems(
+            defaults.stringArray(forKey: SettingsKeys.menuBarLayoutItems)?
+                .compactMap(MenuBarLayoutItem.init(rawValue:))
+        )
+        primaryClockFormatOverride = MenuBarClockFormatOverride(rawValue: defaults.string(forKey: SettingsKeys.primaryClockFormatOverride) ?? "") ?? .appDefault
+        secondaryClockFormatOverride = MenuBarClockFormatOverride(rawValue: defaults.string(forKey: SettingsKeys.secondaryClockFormatOverride) ?? "") ?? .appDefault
+        menuBarSeparatorStyle = MenuBarSeparatorStyle(rawValue: defaults.string(forKey: SettingsKeys.menuBarSeparatorStyle) ?? "") ?? .pipe
+        menuBarSpacing = MenuBarSpacing(rawValue: defaults.string(forKey: SettingsKeys.menuBarSpacing) ?? "") ?? .comfortable
+        refreshIntervalPreference = RefreshIntervalPreference(rawValue: defaults.string(forKey: SettingsKeys.refreshIntervalPreference) ?? "") ?? .automatic
         muteScrollerSound = defaults.object(forKey: SettingsKeys.muteScrollerSound) as? Bool ?? false
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: SettingsKeys.appearanceModeRawValue) ?? "") ?? .system
 
@@ -179,6 +197,13 @@ public final class ClockSettingsStore: ObservableObject {
         meetingCriticalWarningMinutes = 5
         meetingIndicatorHoverBehavior = .tooltipOnly
         meetingIndicatorClickAction = .openMeeting
+        meetingTimeZonePreference = .system
+        menuBarLayoutItems = MenuBarLayoutItem.defaultOrder
+        primaryClockFormatOverride = .appDefault
+        secondaryClockFormatOverride = .appDefault
+        menuBarSeparatorStyle = .pipe
+        menuBarSpacing = .comfortable
+        refreshIntervalPreference = .automatic
         hasCompletedFirstLaunch = true
         return true
     }
@@ -228,6 +253,35 @@ public final class ClockSettingsStore: ObservableObject {
         effectiveCalendarEnabled ? meetingIndicatorStyle : .off
     }
 
+    public var effectiveMenuBarLayoutItems: [MenuBarLayoutItem] {
+        SubscriptionStore.shared.hasAccess(to: .appearance)
+            ? menuBarLayoutItems
+            : MenuBarLayoutItem.defaultOrder
+    }
+
+    public var effectiveMenuBarSeparatorStyle: MenuBarSeparatorStyle {
+        SubscriptionStore.shared.hasAccess(to: .appearance) ? menuBarSeparatorStyle : .pipe
+    }
+
+    public var effectiveMenuBarSpacing: MenuBarSpacing {
+        SubscriptionStore.shared.hasAccess(to: .appearance) ? menuBarSpacing : .comfortable
+    }
+
+    public func effectiveClockFormatOverride(for slot: ClockSlot) -> MenuBarClockFormatOverride {
+        guard SubscriptionStore.shared.hasAccess(to: .appearance) else { return .appDefault }
+        switch slot {
+        case .primary:
+            return primaryClockFormatOverride
+        case .secondary:
+            return secondaryClockFormatOverride
+        }
+    }
+
+    public func refreshInterval(for defaultInterval: TimeInterval) -> TimeInterval {
+        guard SubscriptionStore.shared.hasAccess(to: .appearance) else { return defaultInterval }
+        return refreshIntervalPreference.interval ?? defaultInterval
+    }
+
     /// Sets icon visibility with mutual exclusion: ambient and weather icons cannot both be on.
     /// Both can be off (no icon). If both are requested on, weather takes priority.
     public func setMenuBarVisibility(icon: Bool, weather: Bool) {
@@ -236,6 +290,16 @@ public final class ClockSettingsStore: ObservableObject {
         if !weather {
             showStatusIcon = icon
         }
+    }
+
+    public func moveMenuBarLayoutItems(from source: IndexSet, to destination: Int) {
+        var items = menuBarLayoutItems
+        items.move(fromOffsets: source, toOffset: destination)
+        setMenuBarLayoutItems(items)
+    }
+
+    public func setMenuBarLayoutItems(_ items: [MenuBarLayoutItem]) {
+        menuBarLayoutItems = Self.sanitizedMenuBarLayoutItems(items)
     }
 
     private func scheduleSave() {
@@ -277,8 +341,28 @@ public final class ClockSettingsStore: ObservableObject {
         defaults.set(meetingCriticalWarningMinutes, forKey: SettingsKeys.meetingCriticalWarningMinutes)
         defaults.set(meetingIndicatorHoverBehavior.rawValue, forKey: SettingsKeys.meetingIndicatorHoverBehavior)
         defaults.set(meetingIndicatorClickAction.rawValue, forKey: SettingsKeys.meetingIndicatorClickAction)
+        defaults.set(meetingTimeZonePreference.rawValue, forKey: SettingsKeys.meetingTimeZonePreference)
+        defaults.set(menuBarLayoutItems.map(\.rawValue), forKey: SettingsKeys.menuBarLayoutItems)
+        defaults.set(primaryClockFormatOverride.rawValue, forKey: SettingsKeys.primaryClockFormatOverride)
+        defaults.set(secondaryClockFormatOverride.rawValue, forKey: SettingsKeys.secondaryClockFormatOverride)
+        defaults.set(menuBarSeparatorStyle.rawValue, forKey: SettingsKeys.menuBarSeparatorStyle)
+        defaults.set(menuBarSpacing.rawValue, forKey: SettingsKeys.menuBarSpacing)
+        defaults.set(refreshIntervalPreference.rawValue, forKey: SettingsKeys.refreshIntervalPreference)
         defaults.set(muteScrollerSound, forKey: SettingsKeys.muteScrollerSound)
         defaults.set(appearanceMode.rawValue, forKey: SettingsKeys.appearanceModeRawValue)
+    }
+
+    private static func sanitizedMenuBarLayoutItems(_ items: [MenuBarLayoutItem]?) -> [MenuBarLayoutItem] {
+        var result: [MenuBarLayoutItem] = []
+        for item in items ?? [] where !result.contains(item) {
+            result.append(item)
+        }
+
+        for item in MenuBarLayoutItem.defaultOrder where !result.contains(item) {
+            result.append(item)
+        }
+
+        return result
     }
 
     private enum MeetingWarningSanitizationSource {
@@ -375,8 +459,180 @@ public enum SettingsKeys {
     public static let meetingCriticalWarningMinutes = "meetingCriticalWarningMinutes"
     public static let meetingIndicatorHoverBehavior = "meetingIndicatorHoverBehavior"
     public static let meetingIndicatorClickAction = "meetingIndicatorClickAction"
+    public static let meetingTimeZonePreference = "meetingTimeZonePreference"
+    public static let menuBarLayoutItems = "menuBarLayoutItems"
+    public static let primaryClockFormatOverride = "primaryClockFormatOverride"
+    public static let secondaryClockFormatOverride = "secondaryClockFormatOverride"
+    public static let menuBarSeparatorStyle = "menuBarSeparatorStyle"
+    public static let menuBarSpacing = "menuBarSpacing"
+    public static let refreshIntervalPreference = "refreshIntervalPreference"
     public static let muteScrollerSound = "muteScrollerSound"
     public static let appearanceModeRawValue = "appearanceModeRawValue"
+}
+
+public enum MenuBarLayoutItem: String, CaseIterable, Identifiable, Sendable {
+    case agentIndicator
+    case meetingIndicator
+    case primaryClock
+    case secondaryClock
+
+    public static let defaultOrder: [MenuBarLayoutItem] = [.agentIndicator, .meetingIndicator, .primaryClock, .secondaryClock]
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .agentIndicator:
+            return "AI activity"
+        case .meetingIndicator:
+            return "Meeting indicator"
+        case .primaryClock:
+            return "Primary clock"
+        case .secondaryClock:
+            return "Secondary clock"
+        }
+    }
+
+    public var compactTitle: String {
+        switch self {
+        case .agentIndicator:
+            return "AI"
+        case .meetingIndicator:
+            return "Now"
+        case .primaryClock:
+            return "Primary"
+        case .secondaryClock:
+            return "Secondary"
+        }
+    }
+
+    public var systemImageName: String {
+        switch self {
+        case .agentIndicator:
+            return "sparkles"
+        case .meetingIndicator:
+            return "clock.badge.fill"
+        case .primaryClock:
+            return "cloud.sun.fill"
+        case .secondaryClock:
+            return "cloud.fill"
+        }
+    }
+}
+
+public enum MenuBarClockFormatOverride: String, CaseIterable, Identifiable, Sendable {
+    case appDefault
+    case twelveHour
+    case twentyFourHour
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .appDefault:
+            return "App default"
+        case .twelveHour:
+            return "12-hour"
+        case .twentyFourHour:
+            return "24-hour"
+        }
+    }
+
+    public func uses24Hour(appDefault: Bool) -> Bool {
+        switch self {
+        case .appDefault:
+            return appDefault
+        case .twelveHour:
+            return false
+        case .twentyFourHour:
+            return true
+        }
+    }
+}
+
+public enum MenuBarSeparatorStyle: String, CaseIterable, Identifiable, Sendable {
+    case pipe
+    case dot
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .pipe:
+            return "Pipe"
+        case .dot:
+            return "Dot"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .pipe:
+            return "|"
+        case .dot:
+            return "•"
+        }
+    }
+}
+
+public enum MenuBarSpacing: String, CaseIterable, Identifiable, Sendable {
+    case compact
+    case comfortable
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .compact:
+            return "Compact"
+        case .comfortable:
+            return "Comfortable"
+        }
+    }
+
+    public var separatorPadding: String {
+        switch self {
+        case .compact:
+            return " "
+        case .comfortable:
+            return "  "
+        }
+    }
+}
+
+public enum RefreshIntervalPreference: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case oneMinute
+    case fiveMinutes
+    case fifteenMinutes
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .automatic:
+            return "Automatic"
+        case .oneMinute:
+            return "Every 1 minute"
+        case .fiveMinutes:
+            return "Every 5 minutes"
+        case .fifteenMinutes:
+            return "Every 15 minutes"
+        }
+    }
+
+    public var interval: TimeInterval? {
+        switch self {
+        case .automatic:
+            return nil
+        case .oneMinute:
+            return 60
+        case .fiveMinutes:
+            return 5 * 60
+        case .fifteenMinutes:
+            return 15 * 60
+        }
+    }
 }
 
 @MainActor
@@ -393,6 +649,7 @@ public final class LaunchAtLoginManager: ObservableObject {
     }
 
     public func refresh() {
+        #if os(macOS)
         guard #available(macOS 13.0, *) else {
             isAvailable = false
             isEnabled = false
@@ -420,9 +677,16 @@ public final class LaunchAtLoginManager: ObservableObject {
             isEnabled = false
             statusMessage = "Launch at login status is unavailable right now."
         }
+        #else
+        isAvailable = false
+        isEnabled = false
+        statusMessage = "Launch at login is only available on Mac."
+        errorMessage = nil
+        #endif
     }
 
     public func setEnabled(_ enabled: Bool) {
+        #if os(macOS)
         guard #available(macOS 13.0, *) else {
             refresh()
             return
@@ -441,6 +705,9 @@ public final class LaunchAtLoginManager: ObservableObject {
         }
 
         refresh()
+        #else
+        refresh()
+        #endif
     }
 }
 
@@ -500,7 +767,7 @@ public final class CalendarStore: ObservableObject {
             await refresh(using: settings)
         } else if authorization == .notDetermined {
             state = .needsPermission
-        } else if #available(macOS 14.0, *), authorization == .writeOnly {
+        } else if isWriteOnly(authorization) {
             state = .failed("Calendar needs full access")
         } else {
             state = .failed("Calendar access is off")
@@ -525,12 +792,7 @@ public final class CalendarStore: ObservableObject {
         state = .loading
 
         do {
-            let granted: Bool
-            if #available(macOS 14.0, *) {
-                granted = try await eventStore.requestFullAccessToEvents()
-            } else {
-                granted = try await requestLegacyEventAccess()
-            }
+            let granted = try await requestEventAccess()
 
             if granted {
                 eventStore = EKEventStore()
@@ -577,6 +839,7 @@ public final class CalendarStore: ObservableObject {
                     startDate: event.startDate,
                     endDate: event.endDate,
                     calendarName: event.calendar.title,
+                    timeZoneID: event.timeZone?.identifier,
                     joinURL: Self.extractJoinURL(from: event)
                 )
             }
@@ -632,6 +895,20 @@ public final class CalendarStore: ObservableObject {
         }
 
         return status == .authorized
+    }
+
+    private func isWriteOnly(_ status: EKAuthorizationStatus) -> Bool {
+        if #available(macOS 14.0, *) {
+            return status == .writeOnly
+        }
+        return false
+    }
+
+    private func requestEventAccess() async throws -> Bool {
+        if #available(macOS 14.0, *) {
+            return try await eventStore.requestFullAccessToEvents()
+        }
+        return try await requestLegacyEventAccess()
     }
 
     private func requestLegacyEventAccess() async throws -> Bool {

@@ -39,3 +39,4 @@ plan.md
 
 # Code review graph
 .code-review-graph/
+__pycache__/

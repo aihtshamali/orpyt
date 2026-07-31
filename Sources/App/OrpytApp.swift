@@ -7,8 +7,8 @@ import EventKitUI
 #endif
 import Security
 import ServiceManagement
-import StoreKit
 import SwiftUI
+@preconcurrency import UserNotifications
 import WeatherKit
 
 #if DIRECT_DISTRIBUTION
@@ -23,16 +23,54 @@ struct OrpytApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            AppSettingsSceneContent(
+                onCheckForUpdates: { appDelegate.checkForUpdates() }
+            )
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    appDelegate.showSettingsFromAppMenu()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }
 
+private struct AppSettingsSceneContent: View {
+    @ObservedObject private var settings = ClockSettingsStore.shared
+    @ObservedObject private var weatherStore = WeatherStore.shared
+    @ObservedObject private var calendarStore = CalendarStore.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
+    @ObservedObject private var agentStore = AgentActivityStore.shared
+    @ObservedObject private var integrationManager = AgentIntegrationManager.shared
+    @StateObject private var navigationStore = SettingsNavigationStore()
+    let onCheckForUpdates: () -> Void
+
+    var body: some View {
+        SettingsView(
+            settings: settings,
+            weatherStore: weatherStore,
+            calendarStore: calendarStore,
+            subscriptionStore: subscriptionStore,
+            agentStore: agentStore,
+            integrationManager: integrationManager,
+            navigationStore: navigationStore,
+            onCheckForUpdates: onCheckForUpdates
+        )
+        .frame(minWidth: 900, minHeight: 660)
+    }
+}
+
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     private var statusController: StatusBarController?
+    private var settingsWindowController: SettingsWindowController?
     private let subscriptionStore = SubscriptionStore.shared
     private let reviewStore = ReviewPromptStore.shared
+    private let agentStore = AgentActivityStore.shared
+    private var agentTransitionCancellable: AnyCancellable?
     #if DIRECT_DISTRIBUTION
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -63,7 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reviewStore.recordLaunch()
         subscriptionStore.prepareForLaunch()
         WelcomePeriodStore.shared.refresh()
+        agentStore.prune()
+        UNUserNotificationCenter.current().delegate = self
+        observeAgentTransitions()
         let shouldOpenSettingsOnLaunch = settings.performInitialSetupIfNeeded()
+        let shouldShowLaunchWindow = shouldShowSettingsWindowOnLaunch(initialSetupNeeded: shouldOpenSettingsOnLaunch)
         _ = LaunchAtLoginManager.shared
         calendarStore.prepareForLaunch(using: settings)
         var controller: StatusBarController?
@@ -72,28 +114,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
+            agentStore: agentStore,
+            integrationManager: AgentIntegrationManager.shared,
             onCheckForUpdates: { [weak self] in self?.checkForUpdates() },
             onTestReviewPrompt: { controller?.presentReviewPromptForDebugTesting() },
             onWindowClosed: { controller?.considerReviewPromptAfterCalmTransition() }
         )
+        self.settingsWindowController = settingsWindowController
         controller = StatusBarController(
             settings: settings,
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
+            agentStore: agentStore,
             reviewStore: reviewStore,
             settingsWindowController: settingsWindowController
         )
         statusController = controller
 
-        // Set accessory policy after status item is created so the menu bar button
-        // is fully allocated before the app hides its Dock icon (macOS 26 beta compat).
-        NSApp.setActivationPolicy(.accessory)
+        // Set accessory policy only when no launch window is needed. App Review
+        // and updated installs must always get an obvious visible surface.
+        NSApp.setActivationPolicy(shouldShowLaunchWindow ? .regular : .accessory)
 
-        if shouldOpenSettingsOnLaunch {
+        // Also patch the generated app-menu item as a fallback for OS versions
+        // that still route through the default SwiftUI Settings action.
+        redirectSettingsMenuItem(to: settingsWindowController)
+
+        if shouldShowLaunchWindow {
             DispatchQueue.main.async {
                 settingsWindowController.show()
             }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            guard settingsWindowController.window?.isVisible != true else { return }
+            controller?.ensureLaunchSurfaceIsVisible()
         }
 
         // Poll for menu bar overflow: if the status item is hidden (menu bar full),
@@ -103,6 +158,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard settingsWindowController?.window?.isVisible != true else { return }
                 statusController?.updateDockVisibilityForOverflow()
             }
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            _ = try? agentStore.ingest(url: url)
+        }
+        AgentIntegrationManager.shared.refresh()
+    }
+
+    private func observeAgentTransitions() {
+        agentTransitionCancellable = agentStore.$lastTransition
+            .compactMap { $0 }
+            .sink { [weak self] transition in
+                self?.deliverNotification(for: transition)
+            }
+    }
+
+    private func deliverNotification(for transition: AgentActivityTransition) {
+        guard statusController?.isPopoverShown != true else { return }
+        let shouldNotify: Bool
+        switch transition.kind {
+        case .attention, .failed:
+            shouldNotify = agentStore.attentionNotificationsEnabled
+        case .completed:
+            shouldNotify = agentStore.completionNotificationsEnabled
+        case .started, .resumed, .ended:
+            shouldNotify = false
+        }
+        guard shouldNotify else { return }
+
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "\(transition.activity.sourceTitle) · \(transition.activity.state.title)"
+            content.body = transition.activity.projectName
+            content.sound = transition.kind == .attention || transition.kind == .failed ? .default : nil
+            content.userInfo = ["activityID": transition.activity.id]
+            center.add(UNNotificationRequest(
+                identifier: "agent-pulse-\(transition.activity.id)-\(transition.activity.state.rawValue)",
+                content: content,
+                trigger: nil
+            ))
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler(statusController?.isPopoverShown == true ? [] : [.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if let id = response.notification.request.content.userInfo["activityID"] as? String,
+           let activity = agentStore.activity(id: id) {
+            StatusBarController.activate(activity: activity)
+        }
+        statusController?.showPopover()
+        completionHandler()
+    }
+
+    func showSettingsFromAppMenu() {
+        settingsWindowController?.show()
+    }
+
+    private func shouldShowSettingsWindowOnLaunch(initialSetupNeeded: Bool) -> Bool {
+        if initialSetupNeeded { return true }
+
+        let currentBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        let key = "launchVisibility.lastSettingsBuild"
+        let defaults = UserDefaults.standard
+
+        guard defaults.string(forKey: key) != currentBuild else {
+            return false
+        }
+
+        defaults.set(currentBuild, forKey: key)
+        return true
+    }
+
+    /// Find any auto-generated "Settings…" menu item and point it at our real
+    /// settings window so ⌘, and the app menu both keep working across macOS
+    /// versions.
+    private func redirectSettingsMenuItem(to settingsWindowController: SettingsWindowController) {
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+
+        let settingsActions: [Selector] = [
+            Selector(("showSettingsWindow:")),
+            Selector(("showPreferencesWindow:")),
+        ]
+
+        for item in appMenu.items where item.action.map(settingsActions.contains) == true {
+            item.target = settingsWindowController
+            item.action = #selector(SettingsWindowController.showFromMenuItem)
         }
     }
 }
@@ -173,6 +329,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
     private let subscriptionStore: SubscriptionStore
+    private let agentStore: AgentActivityStore
     private let reviewStore: ReviewPromptStore
     private let settingsWindowController: SettingsWindowController
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -180,6 +337,8 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     private let meetingTitlePopover = NSPopover()
     private let popoverHostingController = NSHostingController(rootView: AnyView(EmptyView()))
     nonisolated(unsafe) private var timer: Timer?
+    nonisolated(unsafe) private var agentAnimationTimer: Timer?
+    private var agentAnimationFrame = 0
     private var cancellables = Set<AnyCancellable>()
     private var lastWeatherRefreshDate = Date.distantPast
     private var lastCalendarRefreshDate = Date.distantPast
@@ -189,6 +348,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     nonisolated(unsafe) private var globalMouseMoveMonitor: Any?
     private var activeMeetingAlert: MeetingAlertSnapshot?
     private var activeMeetingIndicatorHitWidth: CGFloat = 0
+    private var activeMeetingIndicatorHitRange: ClosedRange<CGFloat>?
     private var isHoveringMeetingIndicator = false
     private var isPresentingReviewPrompt = false
     #if canImport(EventKitUI)
@@ -200,6 +360,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
+        agentStore: AgentActivityStore,
         reviewStore: ReviewPromptStore,
         settingsWindowController: SettingsWindowController
     ) {
@@ -207,6 +368,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
+        self.agentStore = agentStore
         self.reviewStore = reviewStore
         self.settingsWindowController = settingsWindowController
         super.init()
@@ -217,6 +379,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         observeWeatherSettings()
         observeCalendarSettings()
         observeWeather()
+        observeAgentActivity()
         startTimer()
         refreshWeather(force: true)
         refreshCalendar(force: true)
@@ -229,6 +392,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = globalMouseMoveMonitor { NSEvent.removeMonitor(monitor) }
         timer?.invalidate()
+        agentAnimationTimer?.invalidate()
     }
 
     private enum Metrics {
@@ -268,7 +432,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         // Don't touch activation policy while the popover is open
         guard !popover.isShown else { return }
 
-        let buttonVisible = statusItem.button?.window != nil
+        let buttonVisible = isStatusItemVisible
         let currentPolicy = NSApp.activationPolicy()
 
         if buttonVisible {
@@ -294,6 +458,21 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 NSApp.mainMenu = menu
             }
         }
+    }
+
+    func ensureLaunchSurfaceIsVisible() {
+        guard !isStatusItemVisible else { return }
+
+        overflowMissCount = overflowMissThreshold
+        settings.isMenuBarOverflowing = true
+        NSApp.setActivationPolicy(.regular)
+        settingsWindowController.show()
+        updateDockVisibilityForOverflow()
+    }
+
+    private var isStatusItemVisible: Bool {
+        guard let button = statusItem.button else { return false }
+        return button.window != nil && button.bounds.width > 1
     }
 
     @objc private func openSettingsFromDock() {
@@ -338,6 +517,11 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             settings.$meetingCriticalWarningMinutes.map { _ in }.eraseToAnyPublisher(),
             settings.$meetingIndicatorHoverBehavior.map { _ in }.eraseToAnyPublisher(),
             settings.$meetingIndicatorClickAction.map { _ in }.eraseToAnyPublisher(),
+            settings.$menuBarLayoutItems.map { _ in }.eraseToAnyPublisher(),
+            settings.$primaryClockFormatOverride.map { _ in }.eraseToAnyPublisher(),
+            settings.$secondaryClockFormatOverride.map { _ in }.eraseToAnyPublisher(),
+            settings.$menuBarSeparatorStyle.map { _ in }.eraseToAnyPublisher(),
+            settings.$menuBarSpacing.map { _ in }.eraseToAnyPublisher(),
         ]
 
         Publishers.MergeMany(displayPublishers)
@@ -367,6 +551,43 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.settingsWindowController.refreshAppearance()
             }
             .store(in: &cancellables)
+    }
+
+    private func observeAgentActivity() {
+        Publishers.CombineLatest(agentStore.$activities, agentStore.$isEnabled)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in
+                self?.updateAgentAnimationTimer()
+                self?.updateDisplay()
+                self?.refreshPopoverContent()
+                if self?.agentStore.indicatorState == .completed {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 8.1) { [weak self] in
+                        self?.updateDisplay()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updateAgentAnimationTimer() {
+        let shouldAnimate = agentStore.indicatorState == .running &&
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldAnimate else {
+            agentAnimationTimer?.invalidate()
+            agentAnimationTimer = nil
+            agentAnimationFrame = 0
+            return
+        }
+        guard agentAnimationTimer == nil else { return }
+        let newTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.agentAnimationFrame = (self.agentAnimationFrame + 1) % 3
+                self.updateDisplay()
+            }
+        }
+        RunLoop.main.add(newTimer, forMode: .common)
+        agentAnimationTimer = newTimer
     }
 
     private func observeWeatherSettings() {
@@ -471,6 +692,45 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
+    var isPopoverShown: Bool { popover.isShown }
+
+    func showPopover() {
+        guard let button = statusItem.button else { return }
+        if !popover.isShown {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    static func activate(activity: AgentActivity) {
+        if activity.originatesFromCodexDesktop {
+            var components = URLComponents()
+            components.scheme = "codex"
+            components.host = "threads"
+            components.path = "/\(activity.sessionID)"
+            if let taskURL = components.url {
+                NSWorkspace.shared.open(taskURL)
+                return
+            }
+        }
+        let knownBundleIdentifiers: [String: String] = [
+            "Apple_Terminal": "com.apple.Terminal",
+            "iTerm.app": "com.googlecode.iterm2",
+            "vscode": "com.microsoft.VSCode",
+            "WezTerm": "com.github.wez.wezterm",
+            "WarpTerminal": "dev.warp.Warp-Stable",
+        ]
+        if let terminal = activity.terminalProgram,
+           let bundleIdentifier = knownBundleIdentifiers[terminal],
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            NSWorkspace.shared.openApplication(at: appURL, configuration: .init())
+            return
+        }
+        let projectURL = URL(fileURLWithPath: activity.workingDirectory)
+        if FileManager.default.fileExists(atPath: projectURL.path) {
+            NSWorkspace.shared.open(projectURL)
+        }
+    }
+
     private func installOutsideClickMonitors() {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self, self.popover.isShown else { return event }
@@ -496,6 +756,9 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        if agentStore.showTaskDetailsInPopover {
+            agentStore.markCompletedRead()
+        }
         considerReviewPromptAfterCalmTransition()
     }
 
@@ -550,13 +813,13 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             if isDebugTest {
                 let debugAlert = NSAlert()
                 debugAlert.messageText = "Review Action Recorded"
-                debugAlert.informativeText = "This direct-download debug build can show the feedback pre-prompt, but the App Store rating sheet only appears in App Store builds."
+                debugAlert.informativeText = "This direct-download debug build can show the feedback pre-prompt, but the App Store rating page only opens in App Store builds."
                 debugAlert.addButton(withTitle: "OK")
                 debugAlert.runModal()
                 return
             }
             #endif
-            SKStoreReviewController.requestReview()
+            NSWorkspace.shared.open(ReviewPromptStore.appStoreReviewURL)
         case .alertThirdButtonReturn:
             reviewStore.recordPromptDismissal()
             NSWorkspace.shared.open(ReviewPromptStore.suggestionsURL)
@@ -597,11 +860,6 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             calendarState: calendarStore.state
         )
 
-        let baseClockTitle = ClockFormatter.menuBarAttributedTitle(
-            for: now,
-            settings: settings,
-            weatherStore: weatherStore
-        )
         let baseClockTooltip = ClockFormatter.menuBarTooltip(
             for: now,
             settings: settings,
@@ -618,46 +876,172 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             ClockFormatter.meetingIndicatorRender(for: $0, style: style, font: menuBarFont)
         }
         activeMeetingIndicatorHitWidth = indicatorRender?.hitWidth ?? 0
+        activeMeetingIndicatorHitRange = nil
 
         let displayTitle: NSAttributedString
         if let activeMeetingAlert {
             switch style {
             case .off:
-                displayTitle = baseClockTitle
+                displayTitle = menuBarLayoutTitle(for: now, indicatorRender: nil, textAttributes: textAttributes)
             case .fullReplace:
                 displayTitle = NSAttributedString(
                     string: ClockFormatter.meetingFullReplaceTitle(for: activeMeetingAlert),
                     attributes: textAttributes
                 )
             case .tinyBadge, .imminentPill:
-                displayTitle = baseClockTitle
+                displayTitle = menuBarLayoutTitle(for: now, indicatorRender: indicatorRender, textAttributes: textAttributes)
             }
         } else {
-            displayTitle = baseClockTitle
+            displayTitle = menuBarLayoutTitle(for: now, indicatorRender: nil, textAttributes: textAttributes)
             isHoveringMeetingIndicator = false
             meetingTitlePopover.performClose(nil)
         }
 
         let finalTitle = NSMutableAttributedString()
-        if let indicatorRender {
+        if let indicatorRender, activeMeetingAlert != nil, style == .fullReplace {
+            if let agentRender = agentIndicatorRender(font: menuBarFont) {
+                finalTitle.append(agentRender)
+                finalTitle.append(NSAttributedString(string: " ", attributes: textAttributes))
+            }
+            let indicatorStart = finalTitle.size().width
             finalTitle.append(indicatorRender.prefix)
             finalTitle.append(NSAttributedString(string: " ", attributes: textAttributes))
+            activeMeetingIndicatorHitRange = indicatorStart...(indicatorStart + indicatorRender.hitWidth)
         }
         finalTitle.append(displayTitle)
 
         statusItem.button?.attributedTitle = finalTitle
         statusItem.button?.toolTip = {
-            guard let activeMeetingAlert else { return baseClockTooltip }
+            let agentLine: String? = switch agentStore.indicatorState {
+            case .hidden: nil
+            case .running: "AI task running"
+            case .attention: "AI task needs attention"
+            case .completed: "AI task completed"
+            case .failed: "AI task failed"
+            }
+            let clockTooltip = agentLine.map { $0 + "\n" + baseClockTooltip } ?? baseClockTooltip
+            guard let activeMeetingAlert else { return clockTooltip }
             guard !isHoveringMeetingIndicator else { return nil }
-            let timeZoneID = settings.primaryTimeZoneID
-            return ClockFormatter.meetingTooltipLine(for: activeMeetingAlert, timeZoneID: timeZoneID) + "\n" + baseClockTooltip
+            return ClockFormatter.meetingTooltipLine(for: activeMeetingAlert, settings: settings) + "\n" + clockTooltip
         }()
         statusItem.button?.image = nil
         statusItem.button?.imagePosition = .noImage
     }
 
+    private func menuBarLayoutTitle(
+        for now: Date,
+        indicatorRender: ClockFormatter.MenuBarMeetingIndicatorRender?,
+        textAttributes: [NSAttributedString.Key: Any]
+    ) -> NSAttributedString {
+        let title = NSMutableAttributedString()
+        let clockSegments = Dictionary(
+            uniqueKeysWithValues: ClockFormatter.menuBarClockSegments(
+                for: now,
+                settings: settings,
+                weatherStore: weatherStore,
+                attributes: textAttributes,
+                font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            ).map { ($0.item, $0.attributedTitle) }
+        )
+        let separator = ClockFormatter.menuBarSeparator(settings: settings, attributes: textAttributes)
+        var didAppendItem = false
+
+        for item in settings.effectiveMenuBarLayoutItems {
+            let nextSegment: NSAttributedString?
+            switch item {
+            case .agentIndicator:
+                nextSegment = agentIndicatorRender(font: NSFont.systemFont(ofSize: 12, weight: .semibold))
+            case .meetingIndicator:
+                nextSegment = indicatorRender?.prefix
+            case .primaryClock, .secondaryClock:
+                nextSegment = clockSegments[item]
+            }
+
+            guard let nextSegment else { continue }
+
+            if didAppendItem {
+                title.append(separator)
+            }
+
+            if item == .meetingIndicator, let indicatorRender {
+                let start = title.size().width
+                activeMeetingIndicatorHitRange = start...(start + indicatorRender.hitWidth)
+            }
+
+            title.append(nextSegment)
+            didAppendItem = true
+        }
+
+        return title.length == 0
+            ? NSAttributedString(string: "Orpyt", attributes: textAttributes)
+            : title
+    }
+
+    private func agentIndicatorRender(font: NSFont) -> NSAttributedString? {
+        let imageName: String
+        let color: NSColor
+        let pointSize: CGFloat
+        let appearanceStatus: AgentIndicatorAppearanceStatus
+        switch agentStore.indicatorState {
+        case .hidden:
+            return nil
+        case .running:
+            appearanceStatus = .running
+            imageName = agentStore.indicatorIcon(for: .running)
+            let pulseColors: [NSColor] = [.systemPurple, .systemIndigo, .systemPink]
+            color = pulseColors[agentAnimationFrame % pulseColors.count]
+            pointSize = max(font.pointSize + 2.5, 14.5)
+        case .attention:
+            appearanceStatus = .attention
+            imageName = agentStore.indicatorIcon(for: .attention)
+            color = .systemOrange
+            pointSize = max(font.pointSize + 2.5, 14.5)
+        case .completed:
+            appearanceStatus = .completed
+            imageName = agentStore.indicatorIcon(for: .completed)
+            color = .systemGreen
+            pointSize = max(font.pointSize + 2.5, 14.5)
+        case .failed:
+            appearanceStatus = .failed
+            imageName = agentStore.indicatorIcon(for: .failed)
+            color = .systemRed
+            pointSize = max(font.pointSize + 2.5, 14.5)
+        }
+
+        if let customImage = agentStore.customIndicatorImage(for: appearanceStatus) {
+            let image = customImage.copy() as? NSImage ?? customImage
+            image.isTemplate = false
+            let pulseOffset: CGFloat = appearanceStatus == .running
+                ? [0, 1.2, 0.4][agentAnimationFrame % 3]
+                : 0
+            let renderedSize = pointSize + 1 + pulseOffset
+            image.size = NSSize(width: renderedSize, height: renderedSize)
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = NSRect(x: 0, y: -2.5, width: renderedSize, height: renderedSize)
+            return NSAttributedString(attachment: attachment)
+        }
+
+        let base = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
+        let palette = NSImage.SymbolConfiguration(hierarchicalColor: color)
+        let fallbackName: String = switch agentStore.indicatorState {
+        case .hidden, .running: AgentIndicatorAppearanceStatus.running.defaultIcon
+        case .attention: AgentIndicatorAppearanceStatus.attention.defaultIcon
+        case .completed: AgentIndicatorAppearanceStatus.completed.defaultIcon
+        case .failed: AgentIndicatorAppearanceStatus.failed.defaultIcon
+        }
+        guard let symbol = NSImage(systemSymbolName: imageName, accessibilityDescription: "AI task status")
+                ?? NSImage(systemSymbolName: fallbackName, accessibilityDescription: "AI task status"),
+              let image = symbol.withSymbolConfiguration(base.applying(palette)) else { return nil }
+        image.isTemplate = false
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -2.5, width: pointSize + 1, height: pointSize + 1)
+        return NSAttributedString(attachment: attachment)
+    }
+
     private func updateMeetingIndicatorHoverState() {
-        guard activeMeetingAlert != nil, activeMeetingIndicatorHitWidth > 0 else {
+        guard activeMeetingAlert != nil, activeMeetingIndicatorHitWidth > 0, activeMeetingIndicatorHitRange != nil else {
             if isHoveringMeetingIndicator {
                 isHoveringMeetingIndicator = false
                 updateDisplay()
@@ -674,7 +1058,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
         let mouseInWindow = buttonWindow.convertPoint(fromScreen: mouseOnScreen)
         let mouseInButton = button.convert(mouseInWindow, from: nil)
         let isInsideButton = button.bounds.contains(mouseInButton)
-        let isHoveringIndicator = isInsideButton && mouseInButton.x <= activeMeetingIndicatorHitWidth + 6
+        let isHoveringIndicator = isInsideButton && (activeMeetingIndicatorHitRange?.contains(mouseInButton.x) ?? false)
 
         guard isHoveringIndicator != isHoveringMeetingIndicator else { return }
         isHoveringMeetingIndicator = isHoveringIndicator
@@ -688,13 +1072,14 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func didClickMeetingIndicator(in button: NSStatusBarButton) -> Bool {
         guard activeMeetingAlert != nil, activeMeetingIndicatorHitWidth > 0,
+              let activeMeetingIndicatorHitRange,
               let event = NSApp.currentEvent,
               event.type == .leftMouseUp else {
             return false
         }
 
         let pointInButton = button.convert(event.locationInWindow, from: nil)
-        return button.bounds.contains(pointInButton) && pointInButton.x <= activeMeetingIndicatorHitWidth + 6
+        return button.bounds.contains(pointInButton) && activeMeetingIndicatorHitRange.contains(pointInButton.x)
     }
 
     private func openActiveMeeting() {
@@ -734,8 +1119,8 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func meetingIndicatorAnchorRect(in button: NSStatusBarButton) -> NSRect {
-        let indicatorWidth = max(4, min(activeMeetingIndicatorHitWidth, button.bounds.width))
-        let anchorX = max(0, indicatorWidth - 4)
+        let range = activeMeetingIndicatorHitRange ?? 0...activeMeetingIndicatorHitWidth
+        let anchorX = max(0, min(range.upperBound - 4, button.bounds.width - 4))
         return NSRect(x: anchorX, y: 0, width: 4, height: button.bounds.height)
     }
 
@@ -776,6 +1161,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
+            agentStore: agentStore,
             appearanceMode: settings.effectiveAppearanceMode,
             onOpenSettings: { [weak self] pane in self?.openSettings(pane: pane) },
             onSwapTimeZones: { [weak self, weak settings] in
@@ -783,6 +1169,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.weatherStore.swapClockStates()
             },
             onCreateMeeting: { [weak self] in self?.presentNewMeetingEditor() },
+            onOpenAgentActivity: { activity in Self.activate(activity: activity) },
             onQuit: { NSApplication.shared.terminate(nil) },
             onReviewValueMoment: { [weak self] moment in
                 self?.reviewStore.recordValueMoment(moment)
@@ -849,7 +1236,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        let refreshInterval: TimeInterval = Metrics.weatherRefreshInterval
+        let refreshInterval = settings.refreshInterval(for: Metrics.weatherRefreshInterval)
         let now = Date()
 
         guard force || now.timeIntervalSince(lastWeatherRefreshDate) >= refreshInterval else {
@@ -892,7 +1279,7 @@ private final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        let refreshInterval: TimeInterval = Metrics.calendarRefreshInterval
+        let refreshInterval = settings.refreshInterval(for: Metrics.calendarRefreshInterval)
         let now = Date()
 
         guard force || now.timeIntervalSince(lastCalendarRefreshDate) >= refreshInterval else {
@@ -913,6 +1300,8 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     private let weatherStore: WeatherStore
     private let calendarStore: CalendarStore
     private let subscriptionStore: SubscriptionStore
+    private let agentStore: AgentActivityStore
+    private let integrationManager: AgentIntegrationManager
     private let navigationStore = SettingsNavigationStore()
     private let hostingController: NSHostingController<AnyView>
     private let onCheckForUpdates: () -> Void
@@ -924,6 +1313,8 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         weatherStore: WeatherStore,
         calendarStore: CalendarStore,
         subscriptionStore: SubscriptionStore,
+        agentStore: AgentActivityStore,
+        integrationManager: AgentIntegrationManager,
         onCheckForUpdates: @escaping () -> Void,
         onTestReviewPrompt: @escaping () -> Void,
         onWindowClosed: @escaping () -> Void
@@ -932,6 +1323,8 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
         self.weatherStore = weatherStore
         self.calendarStore = calendarStore
         self.subscriptionStore = subscriptionStore
+        self.agentStore = agentStore
+        self.integrationManager = integrationManager
         self.onCheckForUpdates = onCheckForUpdates
         self.onTestReviewPrompt = onTestReviewPrompt
         self.onWindowClosed = onWindowClosed
@@ -959,6 +1352,10 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc func showFromMenuItem() {
+        show()
     }
 
     func show(pane: SettingsPane? = nil) {
@@ -1002,6 +1399,8 @@ private final class SettingsWindowController: NSWindowController, NSWindowDelega
             weatherStore: weatherStore,
             calendarStore: calendarStore,
             subscriptionStore: subscriptionStore,
+            agentStore: agentStore,
+            integrationManager: integrationManager,
             navigationStore: navigationStore,
             onCheckForUpdates: onCheckForUpdates,
             onTestReviewPrompt: onTestReviewPrompt
